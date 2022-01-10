@@ -217,18 +217,31 @@ public strictfp class bot1 {
         int radius = rc.getType().actionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
         RobotInfo[] enemies = rc.senseNearbyRobots(radius, opponent);
-        if (enemies.length > 0) {
-            MapLocation toAttack = enemies[0].location;
-            if (rc.canAttack(toAttack)) {
+        for (RobotInfo enemy : enemies) {
+            // Attack all enemies we can
+            MapLocation toAttack = enemy.location;
+            while (rc.canAttack(toAttack) && enemy.getHealth() > 0) {
                 rc.attack(toAttack);
             }
         }
 
-        // Also try to move randomly.
+        // Move towards our miners
+        RobotInfo[] friends = rc.senseNearbyRobots(radius, rc.getTeam());
+        for (RobotInfo friend : friends) {
+            if (friend.getType() == RobotType.MINER) {
+                Direction friend_dir = rc.getLocation().directionTo(friend.getLocation());
+                if (rc.canMove(friend_dir)) {
+                    rc.move(friend_dir);
+                    return;
+                }
+            }
+        }
+
+        // If no miners in sight, move randomly.
+        // If we store the location of our archons, lets change this to be moving away from nearest archon
         Direction dir = directions[rng.nextInt(directions.length)];
         if (rc.canMove(dir)) {
             rc.move(dir);
-            //System.out.println("I moved!");
         }
     }
 }
