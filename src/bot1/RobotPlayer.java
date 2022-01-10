@@ -1,7 +1,10 @@
 package bot1;
 
 import battlecode.common.*;
+
 import java.util.Random;
+import java.util.List;
+import java.util.ArrayList;
 
 /**
  * bot1 is the class that describes your main robot strategy.
@@ -162,6 +165,7 @@ public strictfp class RobotPlayer {
             int dx = locations[index].x - me.x;
             int dy = locations[index].y - me.y;
 
+            // we can switch to rc.getLocation().directionTo(locations[0].getLocation())
             if(dx < 0){
                 if(dy < 0){
                     move = 5;
@@ -208,23 +212,51 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Causes rc to attack the enemies at indices in the RobotInfo array enemies.
+     * @param enemies, the array of all enemies
+     * @param indices, the indices of enemies to attack
+     * @param rc, the robot controller
+     * @throws GameActionException
+     */
+    static void attack_enemy_list(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
+        for (int i = 0; i < indices.size(); i++) {
+            RobotInfo enemy = enemies[indices.get(i)];
+            while (rc.canAttack(enemy.location) && enemy.getHealth() > 0) {
+                rc.attack(enemy.location);
+            }
+        }
+    }
+
+    /**
      * Run a single turn for a Soldier.
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runSoldier(RobotController rc) throws GameActionException {
-        // Try to attack someone
         int radius = rc.getType().actionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
         RobotInfo[] enemies = rc.senseNearbyRobots(radius, opponent);
-        for (RobotInfo enemy : enemies) {
-            // Attack all enemies we can
-            MapLocation toAttack = enemy.location;
-            while (rc.canAttack(toAttack) && enemy.getHealth() > 0) {
-                rc.attack(toAttack);
+
+        // Get list of all types of enemies in attacking range
+        List<Integer> enemy_sages = new ArrayList<>();
+        List<Integer> enemy_soldiers = new ArrayList<>();
+        List<Integer> enemy_miners = new ArrayList<>();
+        for (int i = 0; i < enemies.length; i++) {
+            RobotInfo enemy = enemies[i];
+            if (enemy.getType() == RobotType.SAGE) {
+                enemy_sages.add(i);
+            } else if (enemy.getType() == RobotType.SOLDIER) {
+                enemy_soldiers.add(i);
+            } else if (enemy.getType() == RobotType.MINER) {
+                enemy_miners.add(i);
             }
         }
 
-        // Move towards enemy miners to absolutely crap on them
+        // Attack all enemies we can in order of sage then soldier then miner
+        attack_enemy_list(enemies, enemy_sages, rc);
+        attack_enemy_list(enemies, enemy_soldiers, rc);
+        attack_enemy_list(enemies, enemy_miners, rc);
+
+        // Move towards enemy miners
         for (RobotInfo enemy : enemies) {
             if (enemy.getType() == RobotType.MINER) {
                 Direction enemy_dir = rc.getLocation().directionTo(enemy.getLocation());
@@ -235,7 +267,7 @@ public strictfp class RobotPlayer {
         }
 
         // If no enemy miners, move towards our miners
-        // If we store the location of our archons, change this to only move towards miner if it is going away from archon
+        // If we store the location of our archons, get rid of this
         RobotInfo[] friends = rc.senseNearbyRobots(radius, rc.getTeam());
         for (RobotInfo friend : friends) {
             if (friend.getType() == RobotType.MINER) {
