@@ -4,11 +4,11 @@ import battlecode.common.*;
 import java.util.Random;
 
 /**
- * RobotPlayer is the class that describes your main robot strategy.
+ * bot1 is the class that describes your main robot strategy.
  * The run() method inside this class is like your main function: this is what we'll call once your robot
  * is created!
  */
-public strictfp class bot1 {
+public strictfp class RobotPlayer {
 
     /**
      * We will use this variable to count the number of turns this robot has been alive.
@@ -108,7 +108,9 @@ public strictfp class bot1 {
     static void runArchon(RobotController rc) throws GameActionException {
         // Pick a direction to build in.
         Direction dir = directions[rng.nextInt(directions.length)];
-        if (rng.nextBoolean()) {
+        // Need to have it more likely to make a soldier because the soldier costs more so
+        // the miners will have more turns where they can be made
+        if (rng.nextInt(6) >= 5) {
             // Let's try to build a miner.
             rc.setIndicatorString("Trying to build a miner");
             if (rc.canBuildRobot(RobotType.MINER, dir)) {
@@ -144,13 +146,10 @@ public strictfp class bot1 {
             }
         }
 
-        // Also try to move randomly.
-
         MapLocation locations[] = rc.senseNearbyLocationsWithLead(1);
-
         Direction dir;
 
-        if(locations.length == 0){
+        if (locations.length == 0){
             dir = directions[rng.nextInt(directions.length)];
         }
         else{
@@ -225,14 +224,24 @@ public strictfp class bot1 {
             }
         }
 
-        // Move towards our miners
+        // Move towards enemy miners to absolutely crap on them
+        for (RobotInfo enemy : enemies) {
+            if (enemy.getType() == RobotType.MINER) {
+                Direction enemy_dir = rc.getLocation().directionTo(enemy.getLocation());
+                while (rc.canMove(enemy_dir)) {
+                    rc.move(enemy_dir);
+                }
+            }
+        }
+
+        // If no enemy miners, move towards our miners
+        // If we store the location of our archons, change this to only move towards miner if it is going away from archon
         RobotInfo[] friends = rc.senseNearbyRobots(radius, rc.getTeam());
         for (RobotInfo friend : friends) {
             if (friend.getType() == RobotType.MINER) {
                 Direction friend_dir = rc.getLocation().directionTo(friend.getLocation());
                 if (rc.canMove(friend_dir)) {
                     rc.move(friend_dir);
-                    return;
                 }
             }
         }
