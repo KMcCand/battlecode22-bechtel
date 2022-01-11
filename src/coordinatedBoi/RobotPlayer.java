@@ -412,11 +412,17 @@ public strictfp class RobotPlayer {
         // Default moves
         int x = rc.readSharedArray(0);
         if (x > 1) {
-            // If we know where the center is, go towards it
+            // We know where the center is
             int y = rc.readSharedArray(1);
-            Direction dir = rc.getLocation().directionTo(new MapLocation(x, y));
-            if (rc.canMove(dir)) {
-                rc.move(dir);
+            Direction to_center = rc.getLocation().directionTo(new MapLocation(x, y));
+            boolean soldier_nearby = false;
+            for (RobotInfo friend : friends_we_see) {
+                if (friend.getType() == RobotType.SOLDIER) {
+                    soldier_nearby = true;
+                }
+            }
+            if (! soldier_nearby && rc.canMove(to_center)) {
+                rc.move(to_center);
             }
         }
 
