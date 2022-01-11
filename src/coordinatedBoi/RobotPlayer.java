@@ -1,6 +1,7 @@
 package coordinatedBoi;
 
 import battlecode.common.*;
+import scala.Int;
 
 import java.util.Map;
 import java.util.Random;
@@ -327,10 +328,27 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static void attack_enemy_list(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
-        for (int i = 0; i < indices.size(); i++) {
-            RobotInfo enemy = enemies[indices.get(i)];
+        for (Integer index : indices) {
+            RobotInfo enemy = enemies[index];
             while (rc.canAttack(enemy.location) && enemy.getHealth() > 0) {
                 rc.attack(enemy.location);
+            }
+        }
+    }
+
+    /**
+     * Causes rc to move towards the enemies at indices in the RobotInfo array enemies.
+     *
+     * @param enemies, the array of all enemies
+     * @param indices, the indices of enemies to move towards
+     * @param rc, the robot controller
+     * @throws GameActionException
+     */
+    static void move_towards_enemy_list(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
+        for (Integer index : indices) {
+            Direction enemy_dir = rc.getLocation().directionTo(enemies[index].getLocation());
+            while (rc.canMove(enemy_dir)) {
+                rc.move(enemy_dir);
             }
         }
     }
@@ -351,36 +369,47 @@ public strictfp class RobotPlayer {
         RobotInfo[] enemies_we_see = rc.senseNearbyRobots(vision_radius, opponent);
         RobotInfo[] friends_we_see = rc.senseNearbyRobots(vision_radius, rc.getTeam());
 
-        // Get list of all types of enemies in attacking range
+        // Get lists of all types of enemies in attacking range
+        List<Integer> enemy_archons = new ArrayList<>();
         List<Integer> enemy_sages = new ArrayList<>();
         List<Integer> enemy_soldiers = new ArrayList<>();
         List<Integer> enemy_miners = new ArrayList<>();
         for (int i = 0; i < enemies.length; i++) {
-            RobotInfo enemy = enemies[i];
-            if (enemy.getType() == RobotType.SAGE) {
+            RobotType type = enemies[i].getType();
+            if (type == RobotType.ARCHON) {
+                enemy_archons.add(i);
+            } else if (type == RobotType.SAGE) {
                 enemy_sages.add(i);
-            } else if (enemy.getType() == RobotType.SOLDIER) {
+            } else if (type == RobotType.SOLDIER) {
                 enemy_soldiers.add(i);
-            } else if (enemy.getType() == RobotType.MINER) {
+            } else if (type == RobotType.MINER) {
                 enemy_miners.add(i);
             }
         }
 
         // Attack all enemies we can in order of sage then soldier then miner
+        attack_enemy_list(enemies, enemy_archons, rc);
         attack_enemy_list(enemies, enemy_sages, rc);
         attack_enemy_list(enemies, enemy_soldiers, rc);
         attack_enemy_list(enemies, enemy_miners, rc);
 
-        // Move towards enemy miners that we see
-        for (RobotInfo enemy : enemies_we_see) {
-            if (enemy.getType() == RobotType.MINER) {
-                Direction enemy_dir = rc.getLocation().directionTo(enemy.getLocation());
-                while (rc.canMove(enemy_dir)) {
-                    rc.move(enemy_dir);
-                }
+        // Get lists of all types of enemies we see
+        List<Integer> enemy_archons_we_see = new ArrayList();
+        List<Integer> enemy_miners_we_see = new ArrayList<>();
+        for (int i = 0; i < enemies_we_see.length; i++) {
+            RobotInfo enemy = enemies_we_see[i];
+            if (enemy.getType() == RobotType.ARCHON) {
+                enemy_archons_we_see.add(i);
+            } else if (enemy.getType() == RobotType.MINER) {
+                enemy_miners_we_see.add(i);
             }
         }
 
+        // Move towards archons we see, if none, move towards miners we see
+        move_towards_enemy_list(enemies_we_see, enemy_archons_we_see, rc);
+        move_towards_enemy_list(enemies_we_see, enemy_miners_we_see, rc);
+
+        // Default moves
         int x = rc.readSharedArray(0);
         if (x > 1) {
             // If we know where the center is, go towards it
@@ -389,13 +418,12 @@ public strictfp class RobotPlayer {
             if (rc.canMove(dir)) {
                 rc.move(dir);
             }
-        } else {
-            // Default to moving randomly.
-            // Change this default to be spreading out at a radius around archon
-            Direction dir = directions[rng.nextInt(directions.length)];
-            if (rc.canMove(dir)) {
-                rc.move(dir);
-            }
+        }
+
+        // If we still have moves left, we are probably stuck in the middle so we should move randomly.
+        Direction dir = directions[rng.nextInt(directions.length)];
+        if (rc.canMove(dir)) {
+            rc.move(dir);
         }
     }
 }
