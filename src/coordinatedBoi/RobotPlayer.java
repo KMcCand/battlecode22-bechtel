@@ -1,4 +1,4 @@
-package bot1;
+package coordinatedBoi;
 
 import battlecode.common.*;
 
@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.ArrayList;
 
 /**
- * bot1 is the class that describes your main robot strategy.
+ * RobotPlayer is the class that describes your main robot strategy.
  * The run() method inside this class is like your main function: this is what we'll call once your robot
  * is created!
  */
