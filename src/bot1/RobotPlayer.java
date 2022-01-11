@@ -19,6 +19,12 @@ public strictfp class RobotPlayer {
      * these variables are static, in Battlecode they aren't actually shared between your robots.
      */
     static int turnCount = 0;
+    static boolean builtBuilder = false;
+    static int startingMiners = 5;
+    static int currMiners = 0;
+    static int surroundingSoldiers = 2;
+    static boolean builtLab = false;
+    static int startingMIners2 = 10;
 
     /**
      * A random number generator.
@@ -75,9 +81,9 @@ public strictfp class RobotPlayer {
                     case ARCHON:     runArchon(rc);  break;
                     case MINER:      runMiner(rc);   break;
                     case SOLDIER:    runSoldier(rc); break;
-                    case LABORATORY: // Examplefuncsplayer doesn't use any of these robot types below.
+                    case LABORATORY: runLaboratory(rc); break; // Examplefuncsplayer doesn't use any of these robot types below.
                     case WATCHTOWER: // You might want to give them a try!
-                    case BUILDER:
+                    case BUILDER:    runBuilder(rc); break;
                     case SAGE:       break;
                 }
             } catch (GameActionException e) {
@@ -108,22 +114,75 @@ public strictfp class RobotPlayer {
      * Run a single turn for an Archon.
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
+    static void runLaboratory(RobotController rc) throws GameActionException {
+        System.out.println(rc.getTransmutationRate());
+        System.out.println(rc.canTransmute());
+        System.out.println(rc.getActionCooldownTurns());
+        if(rc.canTransmute()) {
+            rc.transmute();
+        }
+    }
+
+    static void runBuilder(RobotController rc) throws GameActionException {
+        Direction dir = directions[rng.nextInt(directions.length)];
+        if(!builtLab && rc.canBuildRobot(RobotType.LABORATORY, dir)) {
+            rc.buildRobot(RobotType.LABORATORY, dir);
+            builtLab = true;
+        }
+    }
+
     static void runArchon(RobotController rc) throws GameActionException {
         // Pick a direction to build in.
         Direction dir = directions[rng.nextInt(directions.length)];
         // Need to have it more likely to make a soldier because the soldier costs more so
         // the miners will have more turns where they can be made
-        if (rng.nextInt(6) >= 5) {
-            // Let's try to build a miner.
-            rc.setIndicatorString("Trying to build a miner");
-            if (rc.canBuildRobot(RobotType.MINER, dir)) {
-                rc.buildRobot(RobotType.MINER, dir);
+
+        if (!builtBuilder && currMiners == startingMiners) {
+            boolean buildBuilder = rc.canBuildRobot(RobotType.BUILDER, dir);
+            if (buildBuilder) {
+                rc.buildRobot(RobotType.BUILDER, dir);
+                builtBuilder = true;
             }
-        } else {
-            // Let's try to build a soldier.
-            rc.setIndicatorString("Trying to build a soldier");
-            if (rc.canBuildRobot(RobotType.SOLDIER, dir)) {
-                rc.buildRobot(RobotType.SOLDIER, dir);
+        }
+        else if (!builtBuilder && currMiners < startingMiners) {
+            boolean buildMiner = rc.canBuildRobot(RobotType.MINER, dir);
+            if(buildMiner) {
+                rc.buildRobot(RobotType.MINER, dir);
+                currMiners++;
+            }
+        }
+        else {
+            RobotInfo[] nearbyRobots = rc.senseNearbyRobots();
+            int soldiers = 0;
+            for (RobotInfo robot: nearbyRobots) {
+                if(rc.getTeam() == robot.team && robot.getType() == RobotType.SOLDIER ) {
+                    soldiers ++;
+                }
+            }
+            boolean builtSoldier = true;
+            if (soldiers < surroundingSoldiers) {
+                builtSoldier = false;
+                if (rc.canBuildRobot(RobotType.SOLDIER, dir)) {
+                    rc.buildRobot(RobotType.SOLDIER, dir);
+                    builtSoldier = true;
+                }
+            }
+            if (currMiners < startingMIners2 && builtSoldier && rng.nextInt(6) >= 5) {
+                // Let's try to build a miner.
+                rc.setIndicatorString("Trying to build a miner");
+                if (rc.canBuildRobot(RobotType.MINER, dir)) {
+                    rc.buildRobot(RobotType.MINER, dir);
+                    currMiners ++;
+                }
+            }
+            else {
+                if(rng.nextInt(100) >= 99) {
+                    rc.setIndicatorString("Trying to build a miner");
+                    if (rc.canBuildRobot(RobotType.MINER, dir)) {
+                        rc.buildRobot(RobotType.MINER, dir);
+                        currMiners ++;
+                    }
+                }
             }
         }
     }
