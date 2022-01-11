@@ -232,9 +232,12 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runSoldier(RobotController rc) throws GameActionException {
-        int radius = rc.getType().actionRadiusSquared;
+        int action_radius = rc.getType().actionRadiusSquared;
+        int vision_radius = rc.getType().visionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
-        RobotInfo[] enemies = rc.senseNearbyRobots(radius, opponent);
+        RobotInfo[] enemies = rc.senseNearbyRobots(action_radius, opponent);
+        RobotInfo[] enemies_we_see = rc.senseNearbyRobots(vision_radius, opponent);
+        RobotInfo[] friends_we_see = rc.senseNearbyRobots(vision_radius, rc.getTeam());
 
         // Get list of all types of enemies in attacking range
         List<Integer> enemy_sages = new ArrayList<>();
@@ -256,8 +259,8 @@ public strictfp class RobotPlayer {
         attack_enemy_list(enemies, enemy_soldiers, rc);
         attack_enemy_list(enemies, enemy_miners, rc);
 
-        // Move towards enemy miners
-        for (RobotInfo enemy : enemies) {
+        // Move towards enemy miners that we see
+        for (RobotInfo enemy : enemies_we_see) {
             if (enemy.getType() == RobotType.MINER) {
                 Direction enemy_dir = rc.getLocation().directionTo(enemy.getLocation());
                 while (rc.canMove(enemy_dir)) {
@@ -266,21 +269,8 @@ public strictfp class RobotPlayer {
             }
         }
 
-        // If no enemy miners, move towards our miners
-        // If we store the location of our archons, get rid of this
-        RobotInfo[] friends = rc.senseNearbyRobots(radius, rc.getTeam());
-        for (RobotInfo friend : friends) {
-            if (friend.getType() == RobotType.MINER) {
-                Direction friend_dir = rc.getLocation().directionTo(friend.getLocation());
-                if (rc.canMove(friend_dir)) {
-                    rc.move(friend_dir);
-                }
-            }
-        }
-
-        // If no miners in sight, move randomly.
-        // If we store the location of our archons, lets change this to be moving away from nearest archon
-        Direction dir = directions[rng.nextInt(directions.length)];
+        // Default to moving randomly.
+        Direction dir = rc.getLocation().directionTo(new MapLocation(0, 0));
         if (rc.canMove(dir)) {
             rc.move(dir);
         }
