@@ -2,6 +2,7 @@ package coordinatedBoi;
 
 import battlecode.common.*;
 
+import java.util.Map;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
@@ -19,6 +20,16 @@ public strictfp class RobotPlayer {
      * these variables are static, in Battlecode they aren't actually shared between your robots.
      */
     static int turnCount = 0;
+
+    /**
+     * Our constants
+     */
+    static boolean builtBuilder = false;
+    static int startingMiners = 5;
+    static int currMiners = 0;
+    static int surroundingSoldiers = 2;
+    static boolean builtLab = false;
+    static int startingMIners2 = 10;
 
     /**
      * A random number generator.
@@ -75,9 +86,9 @@ public strictfp class RobotPlayer {
                     case ARCHON:     runArchon(rc);  break;
                     case MINER:      runMiner(rc);   break;
                     case SOLDIER:    runSoldier(rc); break;
-                    case LABORATORY: // Examplefuncsplayer doesn't use any of these robot types below.
+                    case LABORATORY: runLaboratory(rc); break; // Examplefuncsplayer doesn't use any of these robot types below.
                     case WATCHTOWER: // You might want to give them a try!
-                    case BUILDER:
+                    case BUILDER:    runBuilder(rc); break;
                     case SAGE:       break;
                 }
             } catch (GameActionException e) {
@@ -108,22 +119,75 @@ public strictfp class RobotPlayer {
      * Run a single turn for an Archon.
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
+    static void runLaboratory(RobotController rc) throws GameActionException {
+        System.out.println(rc.getTransmutationRate());
+        System.out.println(rc.canTransmute());
+        System.out.println(rc.getActionCooldownTurns());
+        if(rc.canTransmute()) {
+            rc.transmute();
+        }
+    }
+
+    static void runBuilder(RobotController rc) throws GameActionException {
+        Direction dir = directions[rng.nextInt(directions.length)];
+        if(!builtLab && rc.canBuildRobot(RobotType.LABORATORY, dir)) {
+            rc.buildRobot(RobotType.LABORATORY, dir);
+            builtLab = true;
+        }
+    }
+
     static void runArchon(RobotController rc) throws GameActionException {
         // Pick a direction to build in.
         Direction dir = directions[rng.nextInt(directions.length)];
         // Need to have it more likely to make a soldier because the soldier costs more so
         // the miners will have more turns where they can be made
-        if (rng.nextInt(6) >= 5) {
-            // Let's try to build a miner.
-            rc.setIndicatorString("Trying to build a miner");
-            if (rc.canBuildRobot(RobotType.MINER, dir)) {
-                rc.buildRobot(RobotType.MINER, dir);
+
+        if (!builtBuilder && currMiners == startingMiners) {
+            boolean buildBuilder = rc.canBuildRobot(RobotType.BUILDER, dir);
+            if (buildBuilder) {
+                rc.buildRobot(RobotType.BUILDER, dir);
+                builtBuilder = true;
             }
-        } else {
-            // Let's try to build a soldier.
-            rc.setIndicatorString("Trying to build a soldier");
-            if (rc.canBuildRobot(RobotType.SOLDIER, dir)) {
-                rc.buildRobot(RobotType.SOLDIER, dir);
+        }
+        else if (!builtBuilder && currMiners < startingMiners) {
+            boolean buildMiner = rc.canBuildRobot(RobotType.MINER, dir);
+            if(buildMiner) {
+                rc.buildRobot(RobotType.MINER, dir);
+                currMiners++;
+            }
+        }
+        else {
+            RobotInfo[] nearbyRobots = rc.senseNearbyRobots();
+            int soldiers = 0;
+            for (RobotInfo robot: nearbyRobots) {
+                if(rc.getTeam() == robot.team && robot.getType() == RobotType.SOLDIER ) {
+                    soldiers ++;
+                }
+            }
+            boolean builtSoldier = true;
+            if (soldiers < surroundingSoldiers) {
+                builtSoldier = false;
+                if (rc.canBuildRobot(RobotType.SOLDIER, dir)) {
+                    rc.buildRobot(RobotType.SOLDIER, dir);
+                    builtSoldier = true;
+                }
+            }
+            if (currMiners < startingMIners2 && builtSoldier && rng.nextInt(6) >= 5) {
+                // Let's try to build a miner.
+                rc.setIndicatorString("Trying to build a miner");
+                if (rc.canBuildRobot(RobotType.MINER, dir)) {
+                    rc.buildRobot(RobotType.MINER, dir);
+                    currMiners ++;
+                }
+            }
+            else {
+                if(rng.nextInt(100) >= 99) {
+                    rc.setIndicatorString("Trying to build a miner");
+                    if (rc.canBuildRobot(RobotType.MINER, dir)) {
+                        rc.buildRobot(RobotType.MINER, dir);
+                        currMiners ++;
+                    }
+                }
             }
         }
     }
@@ -212,7 +276,51 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Checks if rc is the soldier tasked with exploring to the top right of the map.
+     * Handles exploring and returns true if rc is the exploring bot, else returns false.
+     *
+     * @param rc
+     * @throws GameActionException
+     */
+    static boolean handle_explorer(RobotController rc) throws GameActionException {
+        if (rc.readSharedArray(0) == 0) {
+            // If there is no exploring soldier set yet, this is the exploring soldier!
+            rc.writeSharedArray(1, rc.getID());
+            // Change the status of the explorer to 1 (searching for corner)
+            rc.writeSharedArray(0, 1);
+        }
+
+        if (rc.readSharedArray(1) == rc.getID()) {
+            // This is the exploring soldier
+            if (rc.readSharedArray(0) == 1) {
+                // Soldier is searching for top right corner
+                if (rc.canMove(Direction.NORTH)) {
+                    rc.move(Direction.NORTH);
+                }
+                if (rc.canMove(Direction.EAST)) {
+                    rc.move(Direction.EAST);
+                }
+
+                MapLocation east = rc.adjacentLocation(Direction.EAST);
+                MapLocation north = rc.adjacentLocation(Direction.NORTH);
+                if (!rc.onTheMap(east) && !rc.onTheMap(north)) {
+                    // We found the corner! Add the center of the map to the comms array
+                    // This overwrites the exploring soldier's id, so it behaves
+                    // like a regular soldier from this point onward
+                    rc.writeSharedArray(0, (east.x - 1) / 2);
+                    rc.writeSharedArray(1, (north.y - 1) / 2);
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Causes rc to attack the enemies at indices in the RobotInfo array enemies.
+     *
      * @param enemies, the array of all enemies
      * @param indices, the indices of enemies to attack
      * @param rc, the robot controller
@@ -232,6 +340,10 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runSoldier(RobotController rc) throws GameActionException {
+        if (handle_explorer(rc)) {
+            return;
+        }
+
         int action_radius = rc.getType().actionRadiusSquared;
         int vision_radius = rc.getType().visionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
@@ -269,10 +381,21 @@ public strictfp class RobotPlayer {
             }
         }
 
-        // Default to moving randomly.
-        Direction dir = directions[rng.nextInt(directions.length)];
-        if (rc.canMove(dir)) {
-            rc.move(dir);
+        int x = rc.readSharedArray(0);
+        if (x > 1) {
+            // If we know where the center is, go towards it
+            int y = rc.readSharedArray(1);
+            Direction dir = rc.getLocation().directionTo(new MapLocation(x, y));
+            if (rc.canMove(dir)) {
+                rc.move(dir);
+            }
+        } else {
+            // Default to moving randomly.
+            // Change this default to be spreading out at a radius around archon
+            Direction dir = directions[rng.nextInt(directions.length)];
+            if (rc.canMove(dir)) {
+                rc.move(dir);
+            }
         }
     }
 }
