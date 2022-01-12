@@ -1,6 +1,7 @@
 package coordinatedBoi;
 
 import battlecode.common.*;
+import scala.collection.Map;
 
 import java.util.Random;
 import java.util.List;
@@ -32,8 +33,9 @@ public strictfp class RobotPlayer {
     static final int MAP_CENTER_START_INDEX = 0;
     static final int ARCHON_LOCATION_START_INDEX = 1;
 
-    // Rubble constants
+    // Other constants
     static final int TOO_MUCH_RUBBLE = 40;
+    static final int COMMS_ARRAY_SIZE = 12;
 
     /**
      * A random number generator.
@@ -99,14 +101,14 @@ public strictfp class RobotPlayer {
                 // Oh no! It looks like we did something illegal in the Battlecode world. You should
                 // handle GameActionExceptions judiciously, in case unexpected events occur in the game
                 // world. Remember, uncaught exceptions cause your robot to explode!
-                //System.out.println(rc.getType() + " Exception");
-                //e.printStackTrace();
+                System.out.println(rc.getType() + " Exception");
+                e.printStackTrace();
 
             } catch (Exception e) {
                 // Oh no! It looks like our code tried to do something bad. This isn't a
                 // GameActionException, so it's more likely to be a bug in our code.
-                //System.out.println(rc.getType() + " Exception");
-                //e.printStackTrace();
+                System.out.println(rc.getType() + " Exception");
+                e.printStackTrace();
 
             } finally {
                 // Signify we've done everything we want to do, thereby ending our turn.
@@ -120,6 +122,16 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Prints the entire contents of comms array
+     * @param rc any RobotController that can access comms array
+     */
+    static void printCommsArray(RobotController rc) throws GameActionException {
+        for (int i = 0; i < COMMS_ARRAY_SIZE; i++) {
+            System.out.println(i + " " + rc.readSharedArray(i));
+        }
+    }
+
+    /**
      * Gets the MapLocation stored in compressed form in the comms array at index.
      * If there is no MapLocation at index, returns (0,0). (this assumes that the center
      * of the map and our archons will never be at (0,0).
@@ -129,8 +141,8 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static MapLocation getLocationFromIndex(RobotController rc, int index) throws GameActionException {
-        int x_and_y = rc.readSharedArray(index);
-        return new MapLocation(x_and_y / 100, x_and_y % 100);
+        int coords = rc.readSharedArray(index);
+        return new MapLocation(coords / 100, coords % 100);
     }
 
     /**
@@ -145,12 +157,6 @@ public strictfp class RobotPlayer {
             System.out.println("\n\nASSUMPTION FAILED, MAP IS TOO TALL (Y > 99)\n\n");
         }
         rc.writeSharedArray(index, loc.x * 100 + loc.y);
-    }
-
-    static void moveAvoidRubble(RobotController rc, Direction desired_dir) {
-        for (Direction dir : directions) {
-            if (rc.senseRubble())
-        }
     }
 
     /**
@@ -179,9 +185,9 @@ public strictfp class RobotPlayer {
      */
     static void putArchonLocationInComms(RobotController rc) throws GameActionException {
         int index = ARCHON_LOCATION_START_INDEX;
-        MapLocation curr_loc = rc.getLocation();
+        MapLocation currLoc = rc.getLocation();
         while (rc.readSharedArray(index) != 0) {
-            if (getLocationFromIndex(rc, index).equals(curr_loc)) {
+            if (getLocationFromIndex(rc, index).equals(currLoc)) {
                 // This rc's location is already in the comms array
                 return;
             }
@@ -189,12 +195,46 @@ public strictfp class RobotPlayer {
         }
 
         // Add this rc's location to the comms array at the next available index
-        writeLocationToIndex(rc, index, curr_loc);
+        writeLocationToIndex(rc, index, currLoc);
+    }
+
+    /**
+     * Returns true if the archon rc should send the exploring soldier. This is if
+     * the archon is the top right most archon and the soldier is not yet sent.
+     * @param rc
+     * @return
+     * @throws GameActionException
+     */
+    static boolean isTopRightArchon(RobotController rc) throws GameActionException {
+        MapLocation origin = new MapLocation(0, 0);
+        int our_distance = rc.getLocation().distanceSquaredTo(origin);
+        int index = ARCHON_LOCATION_START_INDEX;
+
+        while (!getLocationFromIndex(rc, index).equals(origin)) {
+            if (getLocationFromIndex(rc, index).distanceSquaredTo(origin) > our_distance) {
+                return false;
+            }
+            index++;
+        }
+
+        return true;
     }
 
     static void runArchon(RobotController rc) throws GameActionException {
         // Put this archon's location in comms array if it isn't already
         putArchonLocationInComms(rc);
+
+        // Send out exploring soldier as early as possible after first wave of miners
+        if (turnCount >= 2 && getLocationFromIndex(rc, MAP_CENTER_START_INDEX).equals(new MapLocation(0, 0))) {
+            // If it is after the second turn (all archon locations are known), and there is no exploring soldier yet
+            if (isTopRightArchon(rc) && rc.canBuildRobot(RobotType.SOLDIER, Direction.NORTHEAST)) {
+                // If we are the top right archon, try to make the exploring soldier
+                rc.buildRobot(RobotType.SOLDIER, Direction.NORTHEAST);
+            } else {
+                // If we are not the top right archon or are but couldn't make the soldier, wait till next turn
+                return;
+            }
+        }
 
         // Pick a direction to build in.
         Direction dir = directions[rng.nextInt(directions.length)];
@@ -339,7 +379,7 @@ public strictfp class RobotPlayer {
      * @param rc
      * @throws GameActionException
      */
-    static boolean handle_explorer(RobotController rc) throws GameActionException {
+    static boolean handleExplorer(RobotController rc) throws GameActionException {
         if (rc.readSharedArray(MAP_CENTER_START_INDEX) == 0) {
             // If there is no exploring soldier set yet, this is the exploring soldier!
             rc.writeSharedArray(MAP_CENTER_START_INDEX, rc.getID());
@@ -378,7 +418,7 @@ public strictfp class RobotPlayer {
      * @param rc, the robot controller
      * @throws GameActionException
      */
-    static void attack_enemy_list(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
+    static void attackEnemyList(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
         for (Integer index : indices) {
             RobotInfo enemy = enemies[index];
             while (rc.canAttack(enemy.location) && enemy.getHealth() > 0) {
@@ -395,11 +435,11 @@ public strictfp class RobotPlayer {
      * @param rc, the robot controller
      * @throws GameActionException
      */
-    static void move_towards_enemy_list(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
+    static void moveTowardsEnemyList(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
         for (Integer index : indices) {
-            Direction enemy_dir = rc.getLocation().directionTo(enemies[index].getLocation());
-            while (rc.canMove(enemy_dir)) {
-                rc.move(enemy_dir);
+            Direction enemyDir = rc.getLocation().directionTo(enemies[index].getLocation());
+            while (rc.canMove(enemyDir)) {
+                rc.move(enemyDir);
             }
         }
     }
@@ -409,69 +449,74 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runSoldier(RobotController rc) throws GameActionException {
-        if (handle_explorer(rc)) {
+        if (handleExplorer(rc)) {
             return;
         }
 
-        int action_radius = rc.getType().actionRadiusSquared;
-        int vision_radius = rc.getType().visionRadiusSquared;
+        int actionRadius = rc.getType().actionRadiusSquared;
+        int visionRadius = rc.getType().visionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
-        RobotInfo[] enemies = rc.senseNearbyRobots(action_radius, opponent);
-        RobotInfo[] enemies_we_see = rc.senseNearbyRobots(vision_radius, opponent);
-        RobotInfo[] friends_we_see = rc.senseNearbyRobots(vision_radius, rc.getTeam());
+        RobotInfo[] enemies = rc.senseNearbyRobots(actionRadius, opponent);
+        RobotInfo[] enemiesWeSee = rc.senseNearbyRobots(visionRadius, opponent);
+        RobotInfo[] friendsWeSee = rc.senseNearbyRobots(visionRadius, rc.getTeam());
 
         // Get lists of all types of enemies in attacking range
-        List<Integer> enemy_archons = new ArrayList<>();
-        List<Integer> enemy_sages = new ArrayList<>();
-        List<Integer> enemy_soldiers = new ArrayList<>();
-        List<Integer> enemy_miners = new ArrayList<>();
+        List<Integer> enemyArchons = new ArrayList<>();
+        List<Integer> enemySages = new ArrayList<>();
+        List<Integer> enemySoldiers = new ArrayList<>();
+        List<Integer> enemyMiners = new ArrayList<>();
         for (int i = 0; i < enemies.length; i++) {
             RobotType type = enemies[i].getType();
             if (type == RobotType.ARCHON) {
-                enemy_archons.add(i);
+                enemyArchons.add(i);
             } else if (type == RobotType.SAGE) {
-                enemy_sages.add(i);
+                enemySages.add(i);
             } else if (type == RobotType.SOLDIER) {
-                enemy_soldiers.add(i);
+                enemySoldiers.add(i);
             } else if (type == RobotType.MINER) {
-                enemy_miners.add(i);
+                enemyMiners.add(i);
             }
         }
 
         // Attack all enemies we can in order of sage then soldier then miner
-        attack_enemy_list(enemies, enemy_archons, rc);
-        attack_enemy_list(enemies, enemy_sages, rc);
-        attack_enemy_list(enemies, enemy_soldiers, rc);
-        attack_enemy_list(enemies, enemy_miners, rc);
+        attackEnemyList(enemies, enemyArchons, rc);
+        attackEnemyList(enemies, enemySages, rc);
+        attackEnemyList(enemies, enemySoldiers, rc);
+        attackEnemyList(enemies, enemyMiners, rc);
 
         // Get lists of all types of enemies we see
-        List<Integer> enemy_archons_we_see = new ArrayList();
-        List<Integer> enemy_miners_we_see = new ArrayList<>();
-        for (int i = 0; i < enemies_we_see.length; i++) {
-            RobotInfo enemy = enemies_we_see[i];
+        List<Integer> enemyArchonsWeSee = new ArrayList();
+        List<Integer> enemyMinersWeSee = new ArrayList<>();
+        for (int i = 0; i < enemiesWeSee.length; i++) {
+            RobotInfo enemy = enemiesWeSee[i];
             if (enemy.getType() == RobotType.ARCHON) {
-                enemy_archons_we_see.add(i);
+                enemyArchonsWeSee.add(i);
             } else if (enemy.getType() == RobotType.MINER) {
-                enemy_miners_we_see.add(i);
+                enemyMinersWeSee.add(i);
             }
         }
 
         // Move towards archons we see, if none, move towards miners we see
-        move_towards_enemy_list(enemies_we_see, enemy_archons_we_see, rc);
-        move_towards_enemy_list(enemies_we_see, enemy_miners_we_see, rc);
+        moveTowardsEnemyList(enemiesWeSee, enemyArchonsWeSee, rc);
+        moveTowardsEnemyList(enemiesWeSee, enemyMinersWeSee, rc);
 
         // Default moves
         MapLocation center = getLocationFromIndex(rc, MAP_CENTER_START_INDEX);
-        if (center.equals(new MapLocation(0, 0))) {
+        if (!center.equals(new MapLocation(0, 0))) {
             // We know where the center is
             Direction to_center = rc.getLocation().directionTo(center);
             boolean soldier_nearby = false;
-            for (RobotInfo friend : friends_we_see) {
+            for (RobotInfo friend : friendsWeSee) {
                 if (friend.getType() == RobotType.SOLDIER) {
                     soldier_nearby = true;
                 }
             }
-            if (! soldier_nearby && rc.canMove(to_center)) {
+            if (soldier_nearby) {
+                Direction newDir = to_center.rotateLeft().rotateLeft().rotateLeft();
+                if (rc.canMove(newDir)) {
+                    rc.move(newDir);
+                }
+            } else if (rc.canMove(to_center)) {
                 rc.move(to_center);
             }
         }
