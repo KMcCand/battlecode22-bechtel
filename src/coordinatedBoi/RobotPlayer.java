@@ -32,7 +32,7 @@ public strictfp class RobotPlayer {
 
     // Comms array constants
     static int MAP_CENTER_START_INDEX = 0;
-    static int ARCHON_LOCATION_START_INDEX = 2;
+    static int ARCHON_LOCATION_START_INDEX = 1;
 
     /**
      * A random number generator.
@@ -149,6 +149,20 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Compresses and writes loc to index in the comms array.
+     * @param rc any RobotController that has access to comms array
+     * @param index the index in the comms array to write loc
+     * @param loc the MapLocation to write
+     * @throws GameActionException
+     */
+    static void writeLocationToIndex(RobotController rc, int index, MapLocation loc) throws GameActionException {
+        if (loc.y > 99) {
+            System.out.println("\n\nASSUMPTION FAILED, MAP IS TOO TALL (Y > 99)\n\n");
+        }
+        rc.writeSharedArray(index, loc.x * 100 + loc.y);
+    }
+
+    /**
      * Puts the location for rc in the comms array if it isn't already there.
      * @param rc the RobotController whose location should be put in comms
      * @throws GameActionException
@@ -165,11 +179,8 @@ public strictfp class RobotPlayer {
             index++;
         }
 
-        // Add this rc's location to the comms array
-        if (curr_loc.y > 99) {
-            System.out.println("\n\nASSUMPTION FAILED, MAP TOO TALL\n\n");
-        }
-        rc.writeSharedArray(index, curr_loc.x * 100 + curr_loc.y);
+        // Add this rc's location to the comms array at the next available index
+        writeLocationToIndex(rc, index, curr_loc);
     }
 
     static void runArchon(RobotController rc) throws GameActionException {
@@ -323,30 +334,28 @@ public strictfp class RobotPlayer {
     static boolean handle_explorer(RobotController rc) throws GameActionException {
         if (rc.readSharedArray(MAP_CENTER_START_INDEX) == 0) {
             // If there is no exploring soldier set yet, this is the exploring soldier!
-            rc.writeSharedArray(MAP_CENTER_START_INDEX + 1, rc.getID());
-            // Change the status of the explorer to 1 (searching for corner)
-            rc.writeSharedArray(MAP_CENTER_START_INDEX, 1);
+            rc.writeSharedArray(MAP_CENTER_START_INDEX, rc.getID());
         }
 
-        if (rc.readSharedArray(MAP_CENTER_START_INDEX + 1) == rc.getID()) {
+        if (rc.readSharedArray(MAP_CENTER_START_INDEX) == rc.getID()) {
             // This is the exploring soldier
-            if (rc.readSharedArray(MAP_CENTER_START_INDEX) == 1) {
-                // Soldier is searching for top right corner
-                if (rc.canMove(Direction.NORTH)) {
-                    rc.move(Direction.NORTH);
-                }
-                if (rc.canMove(Direction.EAST)) {
-                    rc.move(Direction.EAST);
-                }
+            if (rc.canMove(Direction.NORTH)) {
+                rc.move(Direction.NORTH);
+            }
+            if (rc.canMove(Direction.EAST)) {
+                rc.move(Direction.EAST);
+            }
 
-                MapLocation east = rc.adjacentLocation(Direction.EAST);
-                MapLocation north = rc.adjacentLocation(Direction.NORTH);
-                if (!rc.onTheMap(east) && !rc.onTheMap(north)) {
-                    // We found the corner! Add the center of the map to the comms array
-                    // This overwrites the exploring soldier's id, so it behaves
-                    // like a regular soldier from this point onward
-                    rc.writeSharedArray(MAP_CENTER_START_INDEX, (east.x - 1) / 2);
-                    rc.writeSharedArray(MAP_CENTER_START_INDEX + 1, (north.y - 1) / 2);
+            MapLocation east = rc.adjacentLocation(Direction.EAST);
+            MapLocation north = rc.adjacentLocation(Direction.NORTH);
+            if (!rc.onTheMap(east) && !rc.onTheMap(north)) {
+                // We found the corner! Add the center of the map to the comms array
+                // This overwrites the exploring soldier's id, so it behaves
+                // like a regular soldier from this point onward
+                MapLocation center = new MapLocation((east.x - 1) / 2, (north.y - 1) / 2);
+                writeLocationToIndex(rc, MAP_CENTER_START_INDEX, center);
+                for (int i = 0; i < 12; i++) {
+                    System.out.println(i + " " + rc.readSharedArray(i));
                 }
             }
 
