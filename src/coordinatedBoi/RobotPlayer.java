@@ -22,15 +22,17 @@ public strictfp class RobotPlayer {
      */
     static int turnCount = 0;
 
-    /**
-     * Our constants
-     */
+    // Archon constants
     static boolean builtBuilder = false;
     static int startingMiners = 5;
     static int currMiners = 0;
     static int surroundingSoldiers = 2;
     static boolean builtLab = false;
     static int startingMIners2 = 10;
+
+    // Comms array constants
+    static int MAP_CENTER_START_INDEX = 0;
+    static int ARCHON_LOCATION_START_INDEX = 2;
 
     /**
      * A random number generator.
@@ -87,8 +89,8 @@ public strictfp class RobotPlayer {
                     case ARCHON:     runArchon(rc);  break;
                     case MINER:      runMiner(rc);   break;
                     case SOLDIER:    runSoldier(rc); break;
-                    case LABORATORY: runLaboratory(rc); break; // Examplefuncsplayer doesn't use any of these robot types below.
-                    case WATCHTOWER: // You might want to give them a try!
+                    case LABORATORY: runLaboratory(rc); break;
+                    case WATCHTOWER:
                     case BUILDER:    runBuilder(rc); break;
                     case SAGE:       break;
                 }
@@ -121,10 +123,7 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runLaboratory(RobotController rc) throws GameActionException {
-        System.out.println(rc.getTransmutationRate());
-        System.out.println(rc.canTransmute());
-        System.out.println(rc.getActionCooldownTurns());
-        if(rc.canTransmute()) {
+        if (rc.canTransmute()) {
             rc.transmute();
         }
     }
@@ -137,7 +136,46 @@ public strictfp class RobotPlayer {
         }
     }
 
+    /**
+     * Gets the MapLocation stored in compressed form in the comms array at index
+     * @param rc any RobotController that can access comms array
+     * @param index the index in the comms array of the MapLocation
+     * @return
+     * @throws GameActionException
+     */
+    static MapLocation getLocationFromIndex(RobotController rc, int index) throws GameActionException {
+        int x_and_y = rc.readSharedArray(index);
+        return new MapLocation(x_and_y / 100, x_and_y % 100);
+    }
+
+    /**
+     * Puts the location for rc in the comms array if it isn't already there.
+     * @param rc the RobotController whose location should be put in comms
+     * @throws GameActionException
+     *
+     */
+    static void putArchonLocationInComms(RobotController rc) throws GameActionException {
+        int index = ARCHON_LOCATION_START_INDEX;
+        MapLocation curr_loc = rc.getLocation();
+        while (rc.readSharedArray(index) != 0) {
+            if (getLocationFromIndex(rc, index).compareTo(curr_loc) == 0) {
+                // This rc's location is already in the comms array
+                return;
+            }
+            index++;
+        }
+
+        // Add this rc's location to the comms array
+        if (curr_loc.y > 99) {
+            System.out.println("\n\nASSUMPTION FAILED, MAP TOO TALL\n\n");
+        }
+        rc.writeSharedArray(index, curr_loc.x * 100 + curr_loc.y);
+    }
+
     static void runArchon(RobotController rc) throws GameActionException {
+        // Put this archon's location in comms array if it isn't already
+        putArchonLocationInComms(rc);
+
         // Pick a direction to build in.
         Direction dir = directions[rng.nextInt(directions.length)];
         // Need to have it more likely to make a soldier because the soldier costs more so
@@ -272,7 +310,6 @@ public strictfp class RobotPlayer {
 //        Direction dir = directions[rng.nextInt(directions.length)];
 //        if (rc.canMove(dir)) {
 //            rc.move(dir);
-//            //System.out.println("I moved!");
 //        }
     }
 
@@ -284,16 +321,16 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static boolean handle_explorer(RobotController rc) throws GameActionException {
-        if (rc.readSharedArray(0) == 0) {
+        if (rc.readSharedArray(MAP_CENTER_START_INDEX) == 0) {
             // If there is no exploring soldier set yet, this is the exploring soldier!
-            rc.writeSharedArray(1, rc.getID());
+            rc.writeSharedArray(MAP_CENTER_START_INDEX + 1, rc.getID());
             // Change the status of the explorer to 1 (searching for corner)
-            rc.writeSharedArray(0, 1);
+            rc.writeSharedArray(MAP_CENTER_START_INDEX, 1);
         }
 
-        if (rc.readSharedArray(1) == rc.getID()) {
+        if (rc.readSharedArray(MAP_CENTER_START_INDEX + 1) == rc.getID()) {
             // This is the exploring soldier
-            if (rc.readSharedArray(0) == 1) {
+            if (rc.readSharedArray(MAP_CENTER_START_INDEX) == 1) {
                 // Soldier is searching for top right corner
                 if (rc.canMove(Direction.NORTH)) {
                     rc.move(Direction.NORTH);
@@ -308,8 +345,8 @@ public strictfp class RobotPlayer {
                     // We found the corner! Add the center of the map to the comms array
                     // This overwrites the exploring soldier's id, so it behaves
                     // like a regular soldier from this point onward
-                    rc.writeSharedArray(0, (east.x - 1) / 2);
-                    rc.writeSharedArray(1, (north.y - 1) / 2);
+                    rc.writeSharedArray(MAP_CENTER_START_INDEX, (east.x - 1) / 2);
+                    rc.writeSharedArray(MAP_CENTER_START_INDEX + 1, (north.y - 1) / 2);
                 }
             }
 
