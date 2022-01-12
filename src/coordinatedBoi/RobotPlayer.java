@@ -1,9 +1,7 @@
 package coordinatedBoi;
 
 import battlecode.common.*;
-import scala.Int;
 
-import java.util.Map;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
@@ -22,7 +20,7 @@ public strictfp class RobotPlayer {
      */
     static int turnCount = 0;
 
-    // Archon constants
+    // Archon variables
     static boolean builtBuilder = false;
     static int startingMiners = 5;
     static int currMiners = 0;
@@ -31,8 +29,11 @@ public strictfp class RobotPlayer {
     static int startingMIners2 = 10;
 
     // Comms array constants
-    static int MAP_CENTER_START_INDEX = 0;
-    static int ARCHON_LOCATION_START_INDEX = 1;
+    static final int MAP_CENTER_START_INDEX = 0;
+    static final int ARCHON_LOCATION_START_INDEX = 1;
+
+    // Rubble constants
+    static final int TOO_MUCH_RUBBLE = 40;
 
     /**
      * A random number generator.
@@ -119,25 +120,9 @@ public strictfp class RobotPlayer {
     }
 
     /**
-     * Run a single turn for an Archon.
-     * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
-     */
-    static void runLaboratory(RobotController rc) throws GameActionException {
-        if (rc.canTransmute()) {
-            rc.transmute();
-        }
-    }
-
-    static void runBuilder(RobotController rc) throws GameActionException {
-        Direction dir = directions[rng.nextInt(directions.length)];
-        if(!builtLab && rc.canBuildRobot(RobotType.LABORATORY, dir)) {
-            rc.buildRobot(RobotType.LABORATORY, dir);
-            builtLab = true;
-        }
-    }
-
-    /**
-     * Gets the MapLocation stored in compressed form in the comms array at index
+     * Gets the MapLocation stored in compressed form in the comms array at index.
+     * If there is no MapLocation at index, returns (0,0). (this assumes that the center
+     * of the map and our archons will never be at (0,0).
      * @param rc any RobotController that can access comms array
      * @param index the index in the comms array of the MapLocation
      * @return
@@ -162,6 +147,30 @@ public strictfp class RobotPlayer {
         rc.writeSharedArray(index, loc.x * 100 + loc.y);
     }
 
+    static void moveAvoidRubble(RobotController rc, Direction desired_dir) {
+        for (Direction dir : directions) {
+            if (rc.senseRubble())
+        }
+    }
+
+    /**
+     * Run a single turn for an Archon.
+     * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
+     */
+    static void runLaboratory(RobotController rc) throws GameActionException {
+        if (rc.canTransmute()) {
+            rc.transmute();
+        }
+    }
+
+    static void runBuilder(RobotController rc) throws GameActionException {
+        Direction dir = directions[rng.nextInt(directions.length)];
+        if(!builtLab && rc.canBuildRobot(RobotType.LABORATORY, dir)) {
+            rc.buildRobot(RobotType.LABORATORY, dir);
+            builtLab = true;
+        }
+    }
+
     /**
      * Puts the location for rc in the comms array if it isn't already there.
      * @param rc the RobotController whose location should be put in comms
@@ -172,7 +181,7 @@ public strictfp class RobotPlayer {
         int index = ARCHON_LOCATION_START_INDEX;
         MapLocation curr_loc = rc.getLocation();
         while (rc.readSharedArray(index) != 0) {
-            if (getLocationFromIndex(rc, index).compareTo(curr_loc) == 0) {
+            if (getLocationFromIndex(rc, index).equals(curr_loc)) {
                 // This rc's location is already in the comms array
                 return;
             }
@@ -271,7 +280,6 @@ public strictfp class RobotPlayer {
         }
         else{
             //eventually have it go to random one in array
-
             int move;
 
             int index = rng.nextInt(locations.length);
@@ -354,9 +362,6 @@ public strictfp class RobotPlayer {
                 // like a regular soldier from this point onward
                 MapLocation center = new MapLocation((east.x - 1) / 2, (north.y - 1) / 2);
                 writeLocationToIndex(rc, MAP_CENTER_START_INDEX, center);
-                for (int i = 0; i < 12; i++) {
-                    System.out.println(i + " " + rc.readSharedArray(i));
-                }
             }
 
             return true;
@@ -456,11 +461,10 @@ public strictfp class RobotPlayer {
         move_towards_enemy_list(enemies_we_see, enemy_miners_we_see, rc);
 
         // Default moves
-        int x = rc.readSharedArray(0);
-        if (x > 1) {
+        MapLocation center = getLocationFromIndex(rc, MAP_CENTER_START_INDEX);
+        if (center.equals(new MapLocation(0, 0))) {
             // We know where the center is
-            int y = rc.readSharedArray(1);
-            Direction to_center = rc.getLocation().directionTo(new MapLocation(x, y));
+            Direction to_center = rc.getLocation().directionTo(center);
             boolean soldier_nearby = false;
             for (RobotInfo friend : friends_we_see) {
                 if (friend.getType() == RobotType.SOLDIER) {
@@ -472,7 +476,7 @@ public strictfp class RobotPlayer {
             }
         }
 
-        // If we still have moves left, we are probably stuck in the middle so we should move randomly.
+        // If we still have moves left, we are probably stuck so we should move randomly.
         Direction dir = directions[rng.nextInt(directions.length)];
         if (rc.canMove(dir)) {
             rc.move(dir);
