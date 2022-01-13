@@ -1,8 +1,8 @@
-# Battlecode 2022 Scaffold
-
-This is the Battlecode 2022 scaffold, containing an `examplefuncsplayer`. Read https://play.battlecode.org/getting-started! 
+# Battlecode 2022 Kyle, Daniel, Julian and Andrei
 
 All files except for those in the folders bot1 and coordinatedBoi in src were part of the scaffold for the competition. bot1 and coodinatedBoi are different editions of our code, and each have a RobotPlayer.java file to run our bots.
+
+This is the Battlecode 2022 scaffold, containing an `examplefuncsplayer`. Read https://play.battlecode.org/getting-started! 
 
 ### Project Structure
 
