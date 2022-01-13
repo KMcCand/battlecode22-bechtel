@@ -29,9 +29,10 @@ public strictfp class RobotPlayer {
     static boolean builtLab = false;
     static int startingMIners2 = 10;
 
-    // Comms array constants
+    // Comms array constants and variables
     static final int MAP_CENTER_START_INDEX = 0;
     static final int ARCHON_LOCATION_START_INDEX = 1;
+    static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
 
     // Other constants
     static final int TOO_MUCH_RUBBLE = 40;
@@ -196,6 +197,7 @@ public strictfp class RobotPlayer {
 
         // Add this rc's location to the comms array at the next available index
         writeLocationToIndex(rc, index, currLoc);
+        lead_farms_location_start_index = index + 1;
     }
 
     /**
@@ -224,7 +226,7 @@ public strictfp class RobotPlayer {
         // Put this archon's location in comms array if it isn't already
         putArchonLocationInComms(rc);
 
-        // Send out exploring soldier as early as possible after first wave of miners
+        // Send out 1 exploring soldier as early as possible after first wave of miners
         if (turnCount >= 2 && getLocationFromIndex(rc, MAP_CENTER_START_INDEX).equals(new MapLocation(0, 0))) {
             // If it is after the second turn (all archon locations are known), and there is no exploring soldier yet
             if (isTopRightArchon(rc) && rc.canBuildRobot(RobotType.SOLDIER, Direction.NORTHEAST)) {
