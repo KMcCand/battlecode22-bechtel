@@ -177,6 +177,24 @@ public strictfp class RobotPlayer {
             rc.buildRobot(RobotType.LABORATORY, dir);
             builtLab = true;
         }
+
+        if (builtLab) {
+            RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
+            for (RobotInfo friend : friendsVisible) {
+                if (friend.getHealth() != friend.getType().health) {
+                    if (rc.canRepair(friend.getLocation())) {
+                        // Repair if possible
+                        rc.repair(friend.getLocation());
+                    }
+                }
+            }
+
+            // If nobody to repair, run default move
+            Direction defaultDir = getDefaultDirection(rc);
+            if (rc.canMove(defaultDir)) {
+                rc.move(defaultDir);
+            }
+        }
     }
 
     /**
@@ -601,7 +619,7 @@ public strictfp class RobotPlayer {
         moveTowardsEnemyList(enemiesWeSee, enemyArchonsWeSee, rc);
         moveTowardsEnemyList(enemiesWeSee, enemyMinersWeSee, rc);
 
-        // Run default moves
+        // Run default move
         Direction dir = getDefaultDirection(rc);
         if (rc.canMove(dir)) {
             rc.move(dir);
