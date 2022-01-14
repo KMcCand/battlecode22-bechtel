@@ -32,12 +32,14 @@ public strictfp class RobotPlayer {
 
     // Comms array constants and variables
     static final int MAP_CENTER_INDEX = 0;
+    static final MapLocation LOCATION_NOT_FOUND = new MapLocation(0, 0);
     static final int ARCHON_LOCATION_START_INDEX = 1;
     static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
 
     // Other constants
     static final int TOO_MUCH_RUBBLE = 40;
     static final int COMMS_ARRAY_SIZE = 12;
+    static final int IDEAL_SOLDIER_MINER_DISTANCE_SQUARED = 8;
 
     /**
      * A random number generator.
@@ -228,11 +230,11 @@ public strictfp class RobotPlayer {
      */
     static boolean isTopRightArchon(RobotController rc) throws GameActionException {
         MapLocation origin = new MapLocation(0, 0);
-        int our_distance = rc.getLocation().distanceSquaredTo(origin);
+        int myDistance = rc.getLocation().distanceSquaredTo(origin);
         int index = ARCHON_LOCATION_START_INDEX;
 
-        while (!getLocationFromIndex(rc, index).equals(origin)) {
-            if (getLocationFromIndex(rc, index).distanceSquaredTo(origin) > our_distance) {
+        while (!getLocationFromIndex(rc, index).equals(LOCATION_NOT_FOUND)) {
+            if (getLocationFromIndex(rc, index).distanceSquaredTo(origin) > myDistance) {
                 return false;
             }
             index++;
@@ -268,7 +270,7 @@ public strictfp class RobotPlayer {
      */
     static boolean directionIsTowardsMapCenter(RobotController rc, Direction dir) throws GameActionException {
         MapLocation center = getLocationFromIndex(rc, MAP_CENTER_INDEX);
-        if (center.equals(new MapLocation(0, 0))) {
+        if (center.equals(LOCATION_NOT_FOUND)) {
             // We haven't found the center yet
             return true;
         }
@@ -304,7 +306,7 @@ public strictfp class RobotPlayer {
         putArchonLocationInComms(rc);
 
         // Send out 1 exploring soldier as early as possible after first wave of miners
-        if (turnCount >= 2 && getLocationFromIndex(rc, MAP_CENTER_INDEX).equals(new MapLocation(0, 0))) {
+        if (turnCount >= 2 && getLocationFromIndex(rc, MAP_CENTER_INDEX).equals(LOCATION_NOT_FOUND)) {
             // If it is after the second turn (all archon locations are known), and there is no exploring soldier yet
             if (isTopRightArchon(rc) && rc.canBuildRobot(RobotType.SOLDIER, Direction.NORTHEAST)) {
                 // If we are the top right archon, try to make the exploring soldier
@@ -370,6 +372,44 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * If rc can see more than two friends of the same type, returns the direction away from the
+     * center of these friends. Else, returns null.
+     * @param rc
+     * @return
+     * @throws GameActionException
+     */
+    static Direction checkClumped(RobotController rc) throws GameActionException {
+        MapLocation center = getLocationFromIndex(rc, MAP_CENTER_INDEX);
+        int clumpAllowedDistance = (center.x / 2) * (center.x / 2);
+        if (!center.equals(LOCATION_NOT_FOUND) && rc.getLocation().distanceSquaredTo(center) > clumpAllowedDistance) {
+            // If we are far from the center, no need to prevent clumping
+            return null;
+        }
+
+        RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
+        List<RobotInfo> sameTypeFriends = new ArrayList<>();
+        for (RobotInfo friend : friendsVisible) {
+            if (friend.getType() == rc.getType()) {
+                sameTypeFriends.add(friend);
+            }
+        }
+        int numSameType = sameTypeFriends.size();
+        if (numSameType > 2) {
+            int centerX = 0;
+            int centerY = 0;
+            for (RobotInfo friend : sameTypeFriends) {
+                MapLocation friendLoc = friend.getLocation();
+                centerX += friendLoc.x;
+                centerY += friendLoc.y;
+            }
+            MapLocation friendsCenter = new MapLocation(centerX / numSameType, centerY / numSameType);
+            return friendsCenter.directionTo(rc.getLocation());
+        }
+
+        return null;
+    }
+
+    /**
      * Returns a good default direction for a miner or soldier. The default direction is
      * calculated as going away from the nearest archon, unless this goes away from the center,
      * then the default direction is towards the center.
@@ -379,9 +419,9 @@ public strictfp class RobotPlayer {
      */
     static Direction getDefaultDirection(RobotController rc) throws GameActionException {
         // Do not be too clumped
-        RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
-        if (friendsVisible.length > 2) {
-            return directions[rng.nextInt(directions.length)];
+        Direction dir = checkClumped(rc);
+        if (dir != null) {
+            return dir;
         }
 
         // Find the nearest archon
@@ -394,9 +434,9 @@ public strictfp class RobotPlayer {
             }
         }
 
-        Direction awayFromNearestArchon = myLoc.directionTo(nearestArchon).opposite();
+        Direction awayFromNearestArchon = nearestArchon.directionTo(myLoc);
         MapLocation center = getLocationFromIndex(rc, MAP_CENTER_INDEX);
-        if (center.equals(new MapLocation(0, 0))) {
+        if (center.equals(LOCATION_NOT_FOUND)) {
             // If we don't know the center yet, return the direction away from nearest archon
             return awayFromNearestArchon;
         }
@@ -437,6 +477,9 @@ public strictfp class RobotPlayer {
 
         if (locations.length == 0){
             dir = getDefaultDirection(rc);
+            if (! rc.canMove(dir)) {
+                dir = directions[rng.nextInt(directions.length)];
+            }
         }
         else{
             //eventually have it go to random one in array
@@ -619,10 +662,41 @@ public strictfp class RobotPlayer {
         moveTowardsEnemyList(enemiesWeSee, enemyArchonsWeSee, rc);
         moveTowardsEnemyList(enemiesWeSee, enemyMinersWeSee, rc);
 
-        // Run default move
+        // Move towards our miners
+        RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
+        for (RobotInfo friend : friendsVisible) {
+            if (friend.getType() == RobotType.MINER) {
+                MapLocation myLoc = rc.getLocation();
+                MapLocation minerLoc = friend.getLocation();
+                Direction dir = myLoc.directionTo(minerLoc);
+                if (myLoc.distanceSquaredTo(minerLoc) > IDEAL_SOLDIER_MINER_DISTANCE_SQUARED) {
+                    // Move towards our miner if we are too far
+                    if (rc.canMove(dir)) {
+                        rc.move(dir);
+                        return;
+                    }
+                } else if (myLoc.distanceSquaredTo(minerLoc) < IDEAL_SOLDIER_MINER_DISTANCE_SQUARED) {
+                    // Move away from our miner if we are too close
+                    if (rc.canMove(dir.opposite())) {
+                        rc.move(dir.opposite());
+                        return;
+                    }
+                } else {
+                    // We are a good distance from our miner. Just save actions.
+                    return;
+                }
+            }
+        }
+
+        // Default move
         Direction dir = getDefaultDirection(rc);
         if (rc.canMove(dir)) {
             rc.move(dir);
+        } else {
+            dir = directions[rng.nextInt(directions.length)];
+            if (rc.canMove(dir)) {
+                rc.move(dir);
+            }
         }
     }
 }
