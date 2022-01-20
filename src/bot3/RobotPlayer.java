@@ -29,9 +29,8 @@ public strictfp class RobotPlayer {
     static int startingMIners2 = 10;
 
     // Comms array constants and variables
-    static final int MAP_CENTER_INDEX = 0;
     static final MapLocation LOCATION_NOT_FOUND = new MapLocation(0, 0);
-    static final int ARCHON_LOCATION_START_INDEX = 1;
+    static final int ARCHON_LOCATION_START_INDEX = 0;
     static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
 
     // Other constants
@@ -220,28 +219,6 @@ public strictfp class RobotPlayer {
     }
 
     /**
-     * Returns true if the archon rc should send the exploring soldier. This is if
-     * the archon is the top right most archon and the soldier is not yet sent.
-     * @param rc
-     * @return
-     * @throws GameActionException
-     */
-    static boolean isTopRightArchon(RobotController rc) throws GameActionException {
-        MapLocation origin = new MapLocation(0, 0);
-        int myDistance = rc.getLocation().distanceSquaredTo(origin);
-        int index = ARCHON_LOCATION_START_INDEX;
-
-        while (!getLocationFromIndex(rc, index).equals(LOCATION_NOT_FOUND)) {
-            if (getLocationFromIndex(rc, index).distanceSquaredTo(origin) > myDistance) {
-                return false;
-            }
-            index++;
-        }
-
-        return true;
-    }
-
-    /**
      * Returns true if the Direction dir is towards an archon on our team, false otherwise.
      * @param rc
      * @param dir
@@ -267,12 +244,7 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static boolean directionIsTowardsMapCenter(RobotController rc, Direction dir) throws GameActionException {
-        MapLocation center = getLocationFromIndex(rc, MAP_CENTER_INDEX);
-        if (center.equals(LOCATION_NOT_FOUND)) {
-            // We haven't found the center yet
-            return true;
-        }
-
+        MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
         Direction toCenter = rc.getLocation().directionTo(center);
         if (dir.dx * toCenter.dx >= 0 && dir.dy * toCenter.dy >= 0) {
             // If the x and y component of dir go towards center, return true
@@ -302,18 +274,6 @@ public strictfp class RobotPlayer {
     static void runArchon(RobotController rc) throws GameActionException {
         // Put this archon's location in comms array if it isn't already
         putArchonLocationInComms(rc);
-
-        // Send out 1 exploring soldier as early as possible after first wave of miners
-        if (turnCount >= 2 && getLocationFromIndex(rc, MAP_CENTER_INDEX).equals(LOCATION_NOT_FOUND)) {
-            // If it is after the second turn (all archon locations are known), and there is no exploring soldier yet
-            if (isTopRightArchon(rc) && rc.canBuildRobot(RobotType.SOLDIER, Direction.NORTHEAST)) {
-                // If we are the top right archon, try to make the exploring soldier
-                rc.buildRobot(RobotType.SOLDIER, Direction.NORTHEAST);
-            } else {
-                // If we are not the top right archon or are but couldn't make the soldier, wait till next turn
-                return;
-            }
-        }
 
         // Pick a direction to build in.
         List<Direction> allValidDir = getArchonBuildDir(rc);
@@ -377,7 +337,7 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static Direction checkClumped(RobotController rc) throws GameActionException {
-        MapLocation center = getLocationFromIndex(rc, MAP_CENTER_INDEX);
+        MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
         int clumpAllowedDistance = (center.x / 2) * (center.x / 2);
         if (!center.equals(LOCATION_NOT_FOUND) && rc.getLocation().distanceSquaredTo(center) > clumpAllowedDistance) {
             // If we are far from the center, no need to prevent clumping
@@ -444,14 +404,9 @@ public strictfp class RobotPlayer {
         // Find the nearest archon
         MapLocation myLoc = rc.getLocation();
         Direction awayFromNearestArchon = getNearestArchon(rc).directionTo(myLoc);
-        MapLocation center = getLocationFromIndex(rc, MAP_CENTER_INDEX);
-        if (center.equals(LOCATION_NOT_FOUND)) {
-            // If we don't know the center yet, return the direction away from nearest archon
-            return awayFromNearestArchon;
-        }
+        MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
 
-        // If we know the center, return the direction to center if the direction
-        // away from the nearest archon goes towards the edge
+        // Return the direction to center if the direction away from the nearest archon goes towards the edge
         Direction toCenter = myLoc.directionTo(center);
         if (awayFromNearestArchon.dx * toCenter.dx >= 0 && awayFromNearestArchon.dy * toCenter.dy >= 0) {
             return awayFromNearestArchon;
@@ -537,110 +492,7 @@ public strictfp class RobotPlayer {
         if (rc.canMove(dir)){
             rc.move(dir);
         }
-
-//        Direction dir = directions[rng.nextInt(directions.length)];
-//        if (rc.canMove(dir)) {
-//            rc.move(dir);
-//        }
     }
-
-//    /**
-//     * Returns the "goodness" of moving in thh Direction dir for the explorer.
-//     * @param rc
-//     * @param dir
-//     * @return
-//     * @throws GameActionException
-//     */
-//    static int getExplorerScore (RobotController rc, Direction dir) throws GameActionException {
-//        int score = 0;
-//        if (dir.equals(Direction.NORTHEAST)) {
-//            score += 100;
-//        } else if (dir.equals(Direction.NORTH) || dir.equals(Direction.EAST)) {
-//            score += 70;
-//        } else if (dir.equals(Direction.NORTHWEST) || dir.equals(Direction.SOUTHEAST)) {
-//            score += 50;
-//        } else {
-//            // Never go in a direction that does not include north or east
-//            score -= 1000;
-//        }
-//
-//        return score - rc.senseRubble(rc.adjacentLocation(dir));
-//    }
-//
-//    /**
-//     * Gets the best direction for the explorer to move in (greedy)
-//     * @param rc
-//     * @return
-//     * @throws GameActionException
-//     */
-//    static Direction getExplorerGreedyDirection(RobotController rc) throws GameActionException {
-//        // Get the highest scoring direction to move in using getExplorerScore()
-//        int bestScore = 0;
-//        List<Direction> bestDirs = new ArrayList<>();
-//        for (Direction dir : directions) {
-//            if (rc.canMove(dir)) {
-//                int score = getExplorerScore(rc, dir);
-//                if (score > bestScore) {
-//                    bestDirs = new ArrayList<>();
-//                    bestDirs.add(dir);
-//                    bestScore = score;
-//                } else if (score == bestScore) {
-//                    bestDirs.add(dir);
-//                }
-//            }
-//        }
-//
-//        if (bestDirs.size() == 0) {
-//            // We cannot move in any direction
-//            return null;
-//        } else {
-//            // If there is a tie, break the tie by which goes the most away from the nearest archon
-//            Direction bestDir = bestDirs.get(0);
-//            MapLocation nearestArchon = getNearestArchon(rc);
-//            int smallestDistance =
-//            for (Direction dir : bestDirs) {
-//                if (rc.getMapHeight())
-//            }
-//
-//            return bestDir;
-//        }
-//    }
-//
-//    /**
-//     * Checks if rc is the soldier tasked with exploring to the top right of the map.
-//     * Handles exploring and returns true if rc is the exploring bot, else returns false.
-//     *
-//     * @param rc
-//     * @throws GameActionException
-//     */
-//    static boolean handleExplorer(RobotController rc) throws GameActionException {
-//        if (rc.readSharedArray(MAP_CENTER_INDEX) == 0) {
-//            // If there is no exploring soldier set yet, this is the exploring soldier!
-//            rc.writeSharedArray(MAP_CENTER_INDEX, rc.getID());
-//        }
-//
-//        if (rc.readSharedArray(MAP_CENTER_INDEX) == rc.getID()) {
-//            // This is the exploring soldier
-//            Direction best = getExplorerGreedyDirection(rc);
-//            if (best != null) {
-//                rc.move(best);
-//            }
-//
-//            MapLocation east = rc.adjacentLocation(Direction.EAST);
-//            MapLocation north = rc.adjacentLocation(Direction.NORTH);
-//            if (!rc.onTheMap(east) && !rc.onTheMap(north)) {
-//                // We found the corner! Add the center of the map to the comms array
-//                // This overwrites the exploring soldier's id, so it behaves
-//                // like a regular soldier from this point onward
-//                MapLocation center = new MapLocation((east.x - 1) / 2, (north.y - 1) / 2);
-//                writeLocationToIndex(rc, MAP_CENTER_INDEX, center);
-//            }
-//
-//            return true;
-//        }
-//
-//        return false;
-//    }
 
     /**
      * Causes rc to attack the enemies at indices in the RobotInfo array enemies.
@@ -681,10 +533,6 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runSoldier(RobotController rc) throws GameActionException {
-//        if (handleExplorer(rc)) {
-//            return;
-//        }
-
         int actionRadius = rc.getType().actionRadiusSquared;
         int visionRadius = rc.getType().visionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
