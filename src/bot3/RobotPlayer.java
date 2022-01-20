@@ -2,6 +2,8 @@ package bot3;
 
 import battlecode.common.*;
 
+import java.util.PriorityQueue;
+import java.util.Comparator;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
@@ -593,6 +595,61 @@ public strictfp class RobotPlayer {
         }
     }
 
+    static PriorityQueue<RobotInfo> getAttackPriority(RobotController rc) {
+        PriorityQueue<RobotInfo> attackPriority = new PriorityQueue<> (new Comparator<RobotInfo>() {
+            public int compare(RobotInfo r1, RobotInfo r2) {
+                // Prioritize above all finishing off an enemy
+                if (r1.getHealth() < 3) {
+                    return -1;
+                } else if (r2.getHealth() < 3) {
+                    return 1;
+                }
+
+                // Then prioritize attacking enemies in order
+                if (r1.getType() == RobotType.SAGE) {
+                    return -1;
+                } else if (r2.getType() == RobotType.SAGE) {
+                    return 1;
+                } else if (r1.getType() == RobotType.WATCHTOWER) {
+                    return -1;
+                } else if (r2.getType() == RobotType.WATCHTOWER) {
+                    return 1;
+                } else if (r1.getType() == RobotType.SOLDIER) {
+                    return -1;
+                } else if (r2.getType() == RobotType.SOLDIER) {
+                    return 1;
+                } else if (r1.getType() == RobotType.ARCHON) {
+                    return -1;
+                } else if (r2.getType() == RobotType.ARCHON) {
+                    return 1;
+                } else if (r1.getType() == RobotType.LABORATORY) {
+                    return -1;
+                } else if (r2.getType() == RobotType.LABORATORY) {
+                    return 1;
+                } else if (r1.getType() == RobotType.MINER) {
+                    return -1;
+                } else if (r2.getType() == RobotType.MINER) {
+                    return 1;
+                } else if (r1.getType() == RobotType.BUILDER) {
+                    return -1;
+                } else if (r2.getType() == RobotType.BUILDER) {
+                    return 1;
+                }
+
+                return 0;
+            }
+        });
+
+        int actionRadius = rc.getType().actionRadiusSquared;
+        Team opponent = rc.getTeam().opponent();
+        RobotInfo[] enemies = rc.senseNearbyRobots(actionRadius, opponent);
+        for (RobotInfo enemy : enemies) {
+            attackPriority.add(enemy);
+        }
+
+        return attackPriority;
+    }
+
     /**
      * Run a single turn for a Soldier.
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
@@ -604,29 +661,14 @@ public strictfp class RobotPlayer {
         RobotInfo[] enemies = rc.senseNearbyRobots(actionRadius, opponent);
         RobotInfo[] enemiesWeSee = rc.senseNearbyRobots(visionRadius, opponent);
 
-        // Get lists of all types of enemies in attacking range
-        List<Integer> enemyArchons = new ArrayList<>();
-        List<Integer> enemySages = new ArrayList<>();
-        List<Integer> enemySoldiers = new ArrayList<>();
-        List<Integer> enemyMiners = new ArrayList<>();
-        for (int i = 0; i < enemies.length; i++) {
-            RobotType type = enemies[i].getType();
-            if (type == RobotType.ARCHON) {
-                enemyArchons.add(i);
-            } else if (type == RobotType.SAGE) {
-                enemySages.add(i);
-            } else if (type == RobotType.SOLDIER) {
-                enemySoldiers.add(i);
-            } else if (type == RobotType.MINER) {
-                enemyMiners.add(i);
+        // Attack enemies in order according to getAttackPriority
+        PriorityQueue<RobotInfo> attackPriority = getAttackPriority(rc);
+        while (rc.isActionReady() && !attackPriority.isEmpty()) {
+            RobotInfo currAttack = attackPriority.poll();
+            while (rc.canAttack(currAttack.getLocation()) && currAttack.getHealth() > 0) {
+                rc.attack(currAttack.getLocation());
             }
         }
-
-        // Attack all enemies we can in order of sage then soldier then miner
-        attackEnemyList(enemies, enemyArchons, rc);
-        attackEnemyList(enemies, enemySages, rc);
-        attackEnemyList(enemies, enemySoldiers, rc);
-        attackEnemyList(enemies, enemyMiners, rc);
 
         // Get lists of all types of enemies we see
         List<Integer> enemyArchonsWeSee = new ArrayList();
