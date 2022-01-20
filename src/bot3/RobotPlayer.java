@@ -35,9 +35,12 @@ public strictfp class RobotPlayer {
     // Comms array constants and variables
     static final int ARCHON_LOCATION_START_INDEX = 0;
     static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
-
-    // Other constants
     static final int COMMS_ARRAY_PRINT_UP_TO = 12;
+
+    // Mine constants
+    static final int MINIMUM_LEAD = 1;
+
+    // Soldier constants
     static final int IDEAL_SOLDIER_MINER_DISTANCE_SQUARED = 8;
 
     /**
@@ -69,11 +72,6 @@ public strictfp class RobotPlayer {
      **/
     @SuppressWarnings("unused")
     public static void run(RobotController rc) throws GameActionException {
-
-        // Hello world! Standard output is very useful for debugging.
-        // Everything you say here will be directly viewable in your terminal when you run a match!
-        //System.out.println("I'm a " + rc.getType() + " and I just got created! I have health " + rc.getHealth());
-
         // You can also use indicators to save debug notes in replays.
         rc.setIndicatorString("Hello world!");
 
@@ -82,8 +80,7 @@ public strictfp class RobotPlayer {
             // loop. If we ever leave this loop and return from run(), the robot dies! At the end of the
             // loop, we call Clock.yield(), signifying that we've done everything we want to do.
 
-            turnCount += 1;  // We have now been alive for one more turn!
-            //System.out.println("Age: " + turnCount + "; Location: " + rc.getLocation());
+            turnCount += 1;
 
             // Try/catch blocks stop unhandled exceptions, which cause your robot to explode.
             try {
@@ -156,7 +153,7 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static void writeLocationToIndex(RobotController rc, int index, MapLocation loc) throws GameActionException {
-        if (loc.y > 99) {
+        if (loc.x > 99 || loc.y > 99) {
             System.out.println("\n\nASSUMPTION FAILED, MAP IS TOO TALL (Y > 99)\n\n");
         }
         rc.writeSharedArray(index, loc.x * 100 + loc.y);
@@ -487,94 +484,47 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runMiner(RobotController rc) throws GameActionException {
-        // Try to mine on squares around us.
-        MapLocation me = rc.getLocation();
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                MapLocation mineLocation = new MapLocation(me.x + dx, me.y + dy);
-                // Notice that the Miner's action cooldown is very low.
-                // You can mine multiple times per turn!
-                while (rc.canMineGold(mineLocation)) {
-                    rc.mineGold(mineLocation);
-                }
-                while (rc.canMineLead(mineLocation)) {
-                    rc.mineLead(mineLocation);
-                }
+        int actionRadius = rc.getType().actionRadiusSquared;
+        int visionRadius = rc.getType().visionRadiusSquared;
+
+        // Mine any gold we can reach
+        for (MapLocation loc : rc.senseNearbyLocationsWithGold(actionRadius)) {
+            while (rc.canMineGold(loc)) {
+                rc.mineGold(loc);
             }
         }
 
-        MapLocation locations[] = rc.senseNearbyLocationsWithLead(1);
-        Direction dir;
-
-        if (locations.length == 0){
-            dir = getDefaultDirection(rc);
-            if (! rc.canMove(dir)) {
-                dir = directions[rng.nextInt(directions.length)];
+        // Mine any lead we can reach as long as we don't deplete it
+        for (MapLocation loc : rc.senseNearbyLocationsWithLead(actionRadius)) {
+            while (rc.canMineLead(loc) && rc.senseLead(loc) > MINIMUM_LEAD) {
+                rc.mineLead(loc);
             }
         }
-        else{
-            //eventually have it go to random one in array
-            int move;
 
-            int index = rng.nextInt(locations.length);
-
-            int dx = locations[index].x - me.x;
-            int dy = locations[index].y - me.y;
-
-            // we can switch to rc.getLocation().directionTo(locations[0].getLocation())
-            if(dx < 0){
-                if(dy < 0){
-                    move = 5;
-                }
-                else if (dy > 0){
-                    move = 7;
-                }
-                else{
-                    move = 6;
-                }
+        // Go towards any gold we see
+        for (MapLocation loc : rc.senseNearbyLocationsWithGold(actionRadius)) {
+            Direction goldDir = rc.getLocation().directionTo(loc);
+            while (rc.canMove(goldDir)) {
+                rc.move(goldDir);
             }
-            else if(dx > 0){
-                if(dy < 0){
-                    move = 3;
-                }
-                else if (dy > 0){
-                    move = 1;
-                }
-                else{
-                    move = 2;
-                }
-            }
-            else{
-                if(dy < 0){
-                    move = 4;
-                }
-                else{
-                    move = 0;
-                }
-            }
-
-            dir = directions[move];
+            return;
         }
 
-        if (rc.canMove(dir)){
-            rc.move(dir);
-        }
-    }
-
-    /**
-     * Causes rc to attack the enemies at indices in the RobotInfo array enemies.
-     *
-     * @param enemies, the array of all enemies
-     * @param indices, the indices of enemies to attack
-     * @param rc, the robot controller
-     * @throws GameActionException
-     */
-    static void attackEnemyList(RobotInfo[] enemies, List<Integer> indices, RobotController rc) throws GameActionException {
-        for (Integer index : indices) {
-            RobotInfo enemy = enemies[index];
-            while (rc.canAttack(enemy.location) && enemy.getHealth() > 0) {
-                rc.attack(enemy.location);
+        // Go towards any lead we see that is not at minimum lead
+        for (MapLocation loc : rc.senseNearbyLocationsWithLead(visionRadius)) {
+            if (rc.senseLead(loc) > MINIMUM_LEAD) {
+                Direction leadDir = rc.getLocation().directionTo(loc);
+                while (rc.canMove(leadDir)) {
+                    rc.move(leadDir);
+                }
+                return;
             }
+        }
+
+        // If we see no gold or lead, follow the default move
+        Direction defaultDir = getDefaultDirection(rc);
+        if (rc.canMove(defaultDir)) {
+            rc.move(defaultDir);
         }
     }
 
@@ -655,10 +605,8 @@ public strictfp class RobotPlayer {
      * This code is wrapped inside the infinite loop in run(), so it is called once per turn.
      */
     static void runSoldier(RobotController rc) throws GameActionException {
-        int actionRadius = rc.getType().actionRadiusSquared;
         int visionRadius = rc.getType().visionRadiusSquared;
         Team opponent = rc.getTeam().opponent();
-        RobotInfo[] enemies = rc.senseNearbyRobots(actionRadius, opponent);
         RobotInfo[] enemiesWeSee = rc.senseNearbyRobots(visionRadius, opponent);
 
         // Attack enemies in order according to getAttackPriority
