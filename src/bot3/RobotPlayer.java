@@ -27,15 +27,15 @@ public strictfp class RobotPlayer {
     static int surroundingSoldiers = 2;
     static boolean builtLab = false;
     static int startingMIners2 = 10;
+    static final int NUM_SOLDIERS_FOR_VIOLENT_ENEMY = 2;
+    static final int NUM_SOLDIERS_FOR_PEACEFUL_ENEMY = 1;
 
     // Comms array constants and variables
-    static final MapLocation LOCATION_NOT_FOUND = new MapLocation(0, 0);
     static final int ARCHON_LOCATION_START_INDEX = 0;
     static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
 
     // Other constants
-    static final int TOO_MUCH_RUBBLE = 40;
-    static final int COMMS_ARRAY_SIZE = 12;
+    static final int COMMS_ARRAY_PRINT_UP_TO = 12;
     static final int IDEAL_SOLDIER_MINER_DISTANCE_SQUARED = 8;
 
     /**
@@ -127,7 +127,7 @@ public strictfp class RobotPlayer {
      * @param rc any RobotController that can access comms array
      */
     static void printCommsArray(RobotController rc) throws GameActionException {
-        for (int i = 0; i < COMMS_ARRAY_SIZE; i++) {
+        for (int i = 0; i < COMMS_ARRAY_PRINT_UP_TO; i++) {
             System.out.println(i + " " + rc.readSharedArray(i));
         }
     }
@@ -271,9 +271,74 @@ public strictfp class RobotPlayer {
         return allValidDir;
     }
 
+    /**
+     * Causes rc to produce numSoldiers soldiers as close as possible to loc.
+     * @param rc, the RobotController of an archon
+     * @throws GameActionException
+     */
+    static void makeSoldiersTowardsLocation(RobotController rc, MapLocation loc, int numSoldiers) throws GameActionException {
+        Direction toLoc = rc.getLocation().directionTo(loc);
+        if (rc.canBuildRobot(RobotType.SOLDIER, toLoc)) {
+            rc.buildRobot(RobotType.SOLDIER, toLoc);
+        }
+
+        if (numSoldiers == 2) {
+            if (rc.canBuildRobot(RobotType.SOLDIER, toLoc.rotateLeft())) {
+                rc.buildRobot(RobotType.SOLDIER, toLoc.rotateLeft());
+            } else if (rc.canBuildRobot(RobotType.SOLDIER, toLoc.rotateRight())) {
+                rc.buildRobot(RobotType.SOLDIER, toLoc.rotateRight());
+            }
+        }
+    }
+
+    /**
+     * Checks if enemies are near rc. If they are, produces a number of soldiers to attack them
+     * and returns true. If there are no enemies, returns false
+     * TODO: Also log these enemies in comms
+     * @param rc
+     * @throws GameActionException
+     */
+    static boolean defendIfEnemies(RobotController rc) throws GameActionException {
+        RobotInfo[] enemies = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam().opponent());
+        boolean sawEnemy = false;
+        for (RobotInfo enemy : enemies) {
+            RobotType type = enemy.getType();
+            if (type == RobotType.SOLDIER || type == RobotType.ARCHON || type == RobotType.SAGE || type == RobotType.WATCHTOWER) {
+                sawEnemy = true;
+                makeSoldiersTowardsLocation(rc, enemy.getLocation(), NUM_SOLDIERS_FOR_VIOLENT_ENEMY);
+            } else if (type == RobotType.MINER || type == RobotType.BUILDER || type == RobotType.LABORATORY) {
+                sawEnemy = true;
+                makeSoldiersTowardsLocation(rc, enemy.getLocation(), NUM_SOLDIERS_FOR_PEACEFUL_ENEMY);
+            }
+        }
+
+        return sawEnemy;
+    }
+
+    /**
+     * Causes rc to repair all friendly units within range.
+     * @param rc
+     * @throws GameActionException
+     */
+    static void repairNearby(RobotController rc) throws GameActionException {
+        for (Direction dir : directions) {
+            if (rc.canRepair(rc.adjacentLocation(dir))) {
+                rc.repair(rc.adjacentLocation(dir));
+            }
+        }
+    }
+
     static void runArchon(RobotController rc) throws GameActionException {
         // Put this archon's location in comms array if it isn't already
         putArchonLocationInComms(rc);
+
+        // If we see enemies, produce soldiers and save resources
+        if (defendIfEnemies(rc)) {
+            return;
+        }
+
+        // Repair anybody nearby
+        repairNearby(rc);
 
         // Pick a direction to build in.
         List<Direction> allValidDir = getArchonBuildDir(rc);
@@ -339,7 +404,7 @@ public strictfp class RobotPlayer {
     static Direction checkClumped(RobotController rc) throws GameActionException {
         MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
         int clumpAllowedDistance = (center.x / 2) * (center.x / 2);
-        if (!center.equals(LOCATION_NOT_FOUND) && rc.getLocation().distanceSquaredTo(center) > clumpAllowedDistance) {
+        if (rc.getLocation().distanceSquaredTo(center) > clumpAllowedDistance) {
             // If we are far from the center, no need to prevent clumping
             return null;
         }
@@ -572,6 +637,10 @@ public strictfp class RobotPlayer {
                 enemyArchonsWeSee.add(i);
             } else if (enemy.getType() == RobotType.MINER) {
                 enemyMinersWeSee.add(i);
+            } else if (enemy.getType() == RobotType.SOLDIER) {
+                // If we see a soldier, do not move. Need to save as many actions as
+                // possible to win the 1 v 1
+                return;
             }
         }
 
