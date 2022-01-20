@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
+import java.lang.Math;
 
 /**
  * RobotPlayer is the class that describes your main robot strategy.
@@ -29,23 +30,25 @@ public strictfp class RobotPlayer {
     static int surroundingSoldiers = 2;
     static boolean builtLab = false;
     static int startingMIners2 = 10;
-    static final int NUM_SOLDIERS_FOR_VIOLENT_ENEMY = 2;
+    static final int NUM_SOLDIERS_FOR_VIOLENT_ENEMY = 3;
     static final int NUM_SOLDIERS_FOR_PEACEFUL_ENEMY = 1;
 
     // Comms Array Indices
     static final int ARCHON_LOCATION_START_INDEX = 0;
-    static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
+    static final int LEAD_FARM_START_INDEX = ARCHON_LOCATION_START_INDEX + 4;
     static final int COMMS_ARRAY_PRINT_UP_TO = 12;
 
     // Comms Array Int Values
+    static final MapLocation NO_INFO = new MapLocation(0, 0);
     static final int OUR_ARCHON_IS_SAFE = 0;
-    static final int OUR_ARCHON_IS_FOUND = 1;
 
     // Miner constants
     static final int MINIMUM_LEAD = 1;
 
     // Soldier constants
     static final int IDEAL_SOLDIER_MINER_DISTANCE_SQUARED = 8;
+    static final int SHIELD_ARCHON_MIN_DISTANCE = 2;
+    static final int SHIELD_ARCHON_MAX_DISTANCE = 12;
 
     /**
      * A random number generator.
@@ -157,7 +160,7 @@ public strictfp class RobotPlayer {
      */
     static MapLocation getLocationFromIndex(RobotController rc, int index) throws GameActionException {
         int coords = rc.readSharedArray(index);
-        return new MapLocation(coords / 100, coords % 100);
+        return new MapLocation((coords % 10000) / 100, coords % 100);
     }
 
     /**
@@ -247,7 +250,6 @@ public strictfp class RobotPlayer {
 
         // Add this rc's location to the comms array at the next available index
         writeLocationAndIntToIndex(rc, index, currLoc, OUR_ARCHON_IS_SAFE);
-        lead_farms_location_start_index = index + 1;
     }
 
     /**
@@ -258,8 +260,14 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static boolean directionIsTowardsFriendlyArchon(RobotController rc, Direction dir) throws GameActionException {
-        for (int i = ARCHON_LOCATION_START_INDEX; i < lead_farms_location_start_index; i++) {
-            Direction toFriendlyArchon = rc.getLocation().directionTo(getLocationFromIndex(rc, i));
+        for (int i = ARCHON_LOCATION_START_INDEX; i < LEAD_FARM_START_INDEX; i++) {
+            MapLocation currArchon = getLocationFromIndex(rc, i);
+            if (currArchon.equals(NO_INFO)) {
+                // We reached the end of the archons in comms array
+                break;
+            }
+
+            Direction toFriendlyArchon = rc.getLocation().directionTo(currArchon);
             if (dir.dx == toFriendlyArchon.dx && dir.dy == toFriendlyArchon.dy) {
                 return true;
             }
@@ -343,8 +351,27 @@ public strictfp class RobotPlayer {
             }
         }
 
-        // Set the communications array to reflect that this archon has been found
-        writeIntToIndex(rc, getNearestArchonIndex(rc), OUR_ARCHON_IS_FOUND);
+        if (sawEnemy) {
+            // Set the communications array to say our archon is in danger
+            writeIntToIndex(rc, getNearestArchonIndex(rc), OUR_ARCHON_IS_SAFE + 1);
+
+            // Make a miner to pick up the lead after we kill the enemy
+            RobotInfo[] friends = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
+            boolean haveMiner = false;
+            for (RobotInfo friend : friends) {
+                if (friend.getType() == RobotType.MINER) {
+                    haveMiner = true;
+                }
+            }
+            if (!haveMiner) {
+                for (Direction dir : directions) {
+                    if (rc.canBuildRobot(RobotType.MINER, dir)) {
+                        rc.buildRobot(RobotType.MINER, dir);
+                        break;
+                    }
+                }
+            }
+        }
 
         return sawEnemy;
     }
@@ -475,8 +502,13 @@ public strictfp class RobotPlayer {
     static MapLocation getNearestArchon(RobotController rc) throws GameActionException {
         MapLocation myLoc = rc.getLocation();
         MapLocation nearestArchon = getLocationFromIndex(rc, ARCHON_LOCATION_START_INDEX);
-        for (int i = ARCHON_LOCATION_START_INDEX; i < lead_farms_location_start_index; i++) {
+        for (int i = ARCHON_LOCATION_START_INDEX; i < LEAD_FARM_START_INDEX; i++) {
             MapLocation currArchon = getLocationFromIndex(rc, i);
+            if (currArchon.equals(NO_INFO)) {
+                // We reached the end of the archons in comms array
+                break;
+            }
+
             if (myLoc.distanceSquaredTo(currArchon) < myLoc.distanceSquaredTo(nearestArchon)) {
                 nearestArchon = currArchon;
             }
@@ -494,8 +526,13 @@ public strictfp class RobotPlayer {
     static int getNearestArchonIndex(RobotController rc) throws GameActionException {
         MapLocation myLoc = rc.getLocation();
         int nearestArchonIndex = ARCHON_LOCATION_START_INDEX;
-        for (int i = ARCHON_LOCATION_START_INDEX; i < lead_farms_location_start_index; i++) {
+        for (int i = ARCHON_LOCATION_START_INDEX; i < LEAD_FARM_START_INDEX; i++) {
             MapLocation currArchon = getLocationFromIndex(rc, i);
+            if (currArchon.equals(NO_INFO)) {
+                // We reached the end of the archons in comms array
+                break;
+            }
+
             MapLocation nearestArchon = getLocationFromIndex(rc, nearestArchonIndex);
             if (myLoc.distanceSquaredTo(currArchon) < myLoc.distanceSquaredTo(nearestArchon)) {
                 nearestArchonIndex = i;
@@ -565,15 +602,21 @@ public strictfp class RobotPlayer {
             return;
         }
 
-        // Go towards any lead we see that is not at minimum lead
+        // Get the direction towards the most lead we see
+        MapLocation maxLeadLoc = rc.getLocation();
         for (MapLocation loc : rc.senseNearbyLocationsWithLead(visionRadius)) {
-            if (rc.senseLead(loc) > MINIMUM_LEAD) {
-                Direction leadDir = rc.getLocation().directionTo(loc);
-                while (rc.canMove(leadDir)) {
-                    rc.move(leadDir);
-                }
-                return;
+            if (rc.senseLead(loc) > MINIMUM_LEAD && rc.senseLead(loc) > rc.senseLead(maxLeadLoc)) {
+                maxLeadLoc = loc;
             }
+        }
+
+        // Go towards the most lead
+        Direction leadDir = rc.getLocation().directionTo(maxLeadLoc);
+        if (rc.canMove(leadDir)) {
+            while (rc.canMove(leadDir)) {
+                rc.move(leadDir);
+            }
+            return;
         }
 
         // If we see no gold or lead, follow the default move
@@ -654,6 +697,25 @@ public strictfp class RobotPlayer {
 
         return attackPriority;
     }
+    
+    static boolean shieldArchon(RobotController rc) throws GameActionException {
+        int nearestArchonIndex = getNearestArchonIndex(rc);
+        MapLocation nearestArchon = getLocationFromIndex(rc, nearestArchonIndex);
+        int nearestArchonDistance = rc.getLocation().distanceSquaredTo(nearestArchon);
+        if (nearestArchonDistance <= SHIELD_ARCHON_MAX_DISTANCE && getIntFromIndex(rc, nearestArchonIndex) != OUR_ARCHON_IS_SAFE) {
+            for (Direction dir : directions) {
+                int idealDistance = (SHIELD_ARCHON_MIN_DISTANCE + SHIELD_ARCHON_MAX_DISTANCE) / 2;
+                int currentError = Math.abs(idealDistance - nearestArchonDistance);
+                int possibleError = Math.abs(idealDistance - rc.adjacentLocation(dir).distanceSquaredTo(nearestArchon));
+                if (possibleError < currentError && rc.canMove(dir)) {
+                    rc.move(dir);
+                    break;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
 
     /**
      * Run a single turn for a Soldier.
@@ -689,8 +751,15 @@ public strictfp class RobotPlayer {
             }
         }
 
-        // Move towards archons we see, if none, move towards miners we see
+        // Move towards archons we see
         moveTowardsEnemyList(enemiesWeSee, enemyArchonsWeSee, rc);
+
+        // If we are just produced at an archon that is in trouble, stay close and save actions
+        if (shieldArchon(rc)) {
+            return;
+        }
+
+        // Move towards enemy miners we see
         moveTowardsEnemyList(enemiesWeSee, enemyMinersWeSee, rc);
 
         // Move towards our miners
