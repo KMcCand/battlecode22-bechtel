@@ -32,12 +32,16 @@ public strictfp class RobotPlayer {
     static final int NUM_SOLDIERS_FOR_VIOLENT_ENEMY = 2;
     static final int NUM_SOLDIERS_FOR_PEACEFUL_ENEMY = 1;
 
-    // Comms array constants and variables
+    // Comms Array Indices
     static final int ARCHON_LOCATION_START_INDEX = 0;
     static int lead_farms_location_start_index = ARCHON_LOCATION_START_INDEX;
     static final int COMMS_ARRAY_PRINT_UP_TO = 12;
 
-    // Mine constants
+    // Comms Array Int Values
+    static final int OUR_ARCHON_IS_SAFE = 0;
+    static final int OUR_ARCHON_IS_FOUND = 1;
+
+    // Miner constants
     static final int MINIMUM_LEAD = 1;
 
     // Soldier constants
@@ -132,6 +136,17 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Gets the integer stored with the location at index in comms array.
+     * @param rc any RobotController that can access comms array
+     * @param index
+     * @return
+     * @throws GameActionException
+     */
+    static int getIntFromIndex(RobotController rc, int index) throws GameActionException {
+        return rc.readSharedArray(index) / 10000;
+    }
+
+    /**
      * Gets the MapLocation stored in compressed form in the comms array at index.
      * If there is no MapLocation at index, returns (0,0). (this assumes that the center
      * of the map and our archons will never be at (0,0).
@@ -146,6 +161,18 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Sets the communication int at index in comms array to info
+     * @param rc
+     * @param index
+     * @param info
+     */
+    static void writeIntToIndex(RobotController rc, int index, int info) throws GameActionException {
+        // Int value cannot be too big
+        assert(info <= 5);
+        rc.writeSharedArray(index, info * 10000 + rc.readSharedArray(index) % 10000);
+    }
+
+    /**
      * Compresses and writes loc to index in the comms array.
      * @param rc any RobotController that has access to comms array
      * @param index the index in the comms array to write loc
@@ -153,10 +180,16 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static void writeLocationToIndex(RobotController rc, int index, MapLocation loc) throws GameActionException {
-        if (loc.x > 99 || loc.y > 99) {
-            System.out.println("\n\nASSUMPTION FAILED, MAP IS TOO TALL (Y > 99)\n\n");
-        }
-        rc.writeSharedArray(index, loc.x * 100 + loc.y);
+        // Location coordinates cannot be too big
+        assert(loc.x <= 99 && loc.y <= 99);
+        rc.writeSharedArray(index, (rc.readSharedArray(index) / 10000) * 10000 + loc.x * 100 + loc.y);
+    }
+
+    static void writeLocationAndIntToIndex(RobotController rc, int index, MapLocation loc, int info) throws GameActionException {
+        // Location and info cannot be too big
+        assert(loc.x <= 99 && loc.y <= 99);
+        assert(info <= 5);
+        rc.writeSharedArray(index, info * 10000 + loc.x * 100 + loc.y);
     }
 
     /**
@@ -213,7 +246,7 @@ public strictfp class RobotPlayer {
         }
 
         // Add this rc's location to the comms array at the next available index
-        writeLocationToIndex(rc, index, currLoc);
+        writeLocationAndIntToIndex(rc, index, currLoc, OUR_ARCHON_IS_SAFE);
         lead_farms_location_start_index = index + 1;
     }
 
@@ -293,7 +326,6 @@ public strictfp class RobotPlayer {
     /**
      * Checks if enemies are near rc. If they are, produces a number of soldiers to attack them
      * and returns true. If there are no enemies, returns false
-     * TODO: Also log these enemies in comms
      * @param rc
      * @throws GameActionException
      */
@@ -310,6 +342,9 @@ public strictfp class RobotPlayer {
                 makeSoldiersTowardsLocation(rc, enemy.getLocation(), NUM_SOLDIERS_FOR_PEACEFUL_ENEMY);
             }
         }
+
+        // Set the communications array to reflect that this archon has been found
+        writeIntToIndex(rc, getNearestArchonIndex(rc), OUR_ARCHON_IS_FOUND);
 
         return sawEnemy;
     }
@@ -448,6 +483,26 @@ public strictfp class RobotPlayer {
         }
 
         return nearestArchon;
+    }
+
+    /**
+     * Returns the index in the communications array of the nearest archon to rc.
+     * @param rc
+     * @return
+     * @throws GameActionException
+     */
+    static int getNearestArchonIndex(RobotController rc) throws GameActionException {
+        MapLocation myLoc = rc.getLocation();
+        int nearestArchonIndex = ARCHON_LOCATION_START_INDEX;
+        for (int i = ARCHON_LOCATION_START_INDEX; i < lead_farms_location_start_index; i++) {
+            MapLocation currArchon = getLocationFromIndex(rc, i);
+            MapLocation nearestArchon = getLocationFromIndex(rc, nearestArchonIndex);
+            if (myLoc.distanceSquaredTo(currArchon) < myLoc.distanceSquaredTo(nearestArchon)) {
+                nearestArchonIndex = i;
+            }
+        }
+
+        return nearestArchonIndex;
     }
 
     /**
