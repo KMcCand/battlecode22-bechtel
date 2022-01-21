@@ -204,29 +204,59 @@ public strictfp class RobotPlayer {
     }
 
     static void runBuilder(RobotController rc) throws GameActionException {
-        Direction dir = directions[rng.nextInt(directions.length)];
-        if(!builtLab && rc.canBuildRobot(RobotType.LABORATORY, dir)) {
-            rc.buildRobot(RobotType.LABORATORY, dir);
-            builtLab = true;
-        }
-
-        if (builtLab) {
-            RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
-            for (RobotInfo friend : friendsVisible) {
-                if (friend.getHealth() != friend.getType().health) {
-                    if (rc.canRepair(friend.getLocation())) {
-                        // Repair if possible
-                        rc.repair(friend.getLocation());
+        MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
+        Direction dir = center.directionTo(rc.getLocation());
+        if(!builtLab) {
+            if (!rc.onTheMap(rc.adjacentLocation(dir))) {
+                for (Direction buildLabDir: Direction.allDirections()) {
+                    if (rc.canBuildRobot(RobotType.LABORATORY, buildLabDir)) {
+                        rc.buildRobot(RobotType.LABORATORY, buildLabDir);
+                        builtLab = true;
                     }
                 }
             }
-
-            // If nobody to repair, run default move
-            Direction defaultDir = getDefaultDirection(rc);
-            if (rc.canMove(defaultDir)) {
-                rc.move(defaultDir);
+            while (rc.onTheMap(rc.adjacentLocation(dir))) {
+                rc.move(dir);
             }
         }
+        else {
+            boolean canRepairLab = false;
+            RobotInfo lab = null;
+            RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
+            for (RobotInfo friend : friendsVisible) {
+                if (friend.getHealth() != friend.getType().health) {
+                    if (friend.getType() == RobotType.LABORATORY && rc.canRepair(friend.getLocation())) {
+                        System.out.println("HERE");
+                        lab = friend;
+                        canRepairLab = true;
+                    }
+                }
+            }
+            if (canRepairLab) {
+                rc.repair(lab.getLocation());
+            }
+        }
+//            else {
+//                for (RobotInfo friend : friendsVisible) {
+//                    if (friend.getHealth() != friend.getType().health) {
+//                        if(friend.getType() == RobotType.LABORATORY && rc.canRepair(friend.getLocation())) {
+//                            System.out.println("HERE");
+//                            lab = friend;
+//                            canRepairLab = true;
+//                        }
+////                    if (rc.canRepair(friend.getLocation())) {
+////                        // Repair if possible
+////                        rc.repair(friend.getLocation());
+////                    }
+//                    }
+//                }
+//                // If nobody to repair, run default move
+//                Direction defaultDir = getDefaultDirection(rc);
+//                if (rc.canMove(defaultDir)) {
+//                    rc.move(defaultDir);
+//                }
+//            }
+//        }
     }
 
     /**
@@ -429,9 +459,10 @@ public strictfp class RobotPlayer {
         Direction dir = allValidDir.get(rng.nextInt(allValidDir.size()));
 
         if (!builtBuilder && currMiners == startingMiners && isFurthestArchonFromCenter(rc)) {
-            boolean buildBuilder = rc.canBuildRobot(RobotType.BUILDER, dir);
+            MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
+            boolean buildBuilder = rc.canBuildRobot(RobotType.BUILDER, center.directionTo(rc.getLocation()));
             if (buildBuilder) {
-                rc.buildRobot(RobotType.BUILDER, dir);
+                rc.buildRobot(RobotType.BUILDER, center.directionTo(rc.getLocation()));
                 builtBuilder = true;
             }
         }
@@ -563,7 +594,6 @@ public strictfp class RobotPlayer {
                 // We reached the end of the archons in comms array
                 break;
             }
-
             if (myLoc.distanceSquaredTo(currArchon) < myLoc.distanceSquaredTo(nearestArchon)) {
                 nearestArchon = currArchon;
             }
