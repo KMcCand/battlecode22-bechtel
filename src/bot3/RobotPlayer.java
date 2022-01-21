@@ -494,6 +494,38 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Returns true if this is our team's furthest archon from the center, false otherwise.
+     * Breaks ties by which archon has the lowest id (is earliest in the comms array and will
+     * produce troops first so will make gold fastest).
+     * @param rc
+     * @return
+     * @throws GameActionException
+     */
+    static boolean isFurthestArchonFromCenter(RobotController rc) throws GameActionException {
+        MapLocation center = new MapLocation(rc.getMapWidth(), rc.getMapHeight());
+        int myDistance = rc.getLocation().distanceSquaredTo(center);
+        for (int i = ARCHON_LOCATION_START_INDEX; i < LEAD_FARM_START_INDEX; i++) {
+            MapLocation currArchon = getLocationFromIndex(rc, i);
+            if (currArchon.equals(NO_INFO)) {
+                // We reached the end of the archons in comms array
+                break;
+            }
+
+            if (currArchon.distanceSquaredTo(center) > myDistance) {
+                // There is an archon further than us
+                return false;
+            } else if (currArchon.distanceSquaredTo(center) == myDistance) {
+                // Either this is us, or there is another archon of equal distance. If this is a
+                // different archon, we are not the closest as ties are broken by which is earlier
+                // in the comms array.
+                return currArchon.equals(rc.getLocation());
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Returns the MapLocation of the nearest archon to rc.
      * @param rc
      * @return
