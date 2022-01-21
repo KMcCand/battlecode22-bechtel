@@ -215,7 +215,7 @@ public strictfp class RobotPlayer {
                     }
                 }
             }
-            while (rc.onTheMap(rc.adjacentLocation(dir))) {
+            while (rc.onTheMap(rc.adjacentLocation(dir)) && rc.canMove(dir)) {
                 rc.move(dir);
             }
         }
@@ -226,7 +226,6 @@ public strictfp class RobotPlayer {
             for (RobotInfo friend : friendsVisible) {
                 if (friend.getHealth() != friend.getType().health) {
                     if (friend.getType() == RobotType.LABORATORY && rc.canRepair(friend.getLocation())) {
-                        System.out.println("HERE");
                         lab = friend;
                         canRepairLab = true;
                     }
@@ -784,33 +783,6 @@ public strictfp class RobotPlayer {
     }
 
     /**
-     * An attempt at making soldiers shield against a specific direction. Cause them to have
-     * too many moves, not enough attacks. Deprecated.
-     * Returns the 'score' for a given move for a soldier shielding an archon under attack.
-     * @param distAfter the distance to the archon after the move
-     * @param currDist the distance to the archon before the move
-     * @return
-     */
-    static int shieldingSoldierPriorities(int distAfter, int currDist) {
-        int answer = 0;
-//        if (currDist < SHIELD_ARCHON_MIN_DISTANCE && distAfter > currDist) {
-//            // First priority is move away from archon so we can produce guys
-//            answer += 105;
-//        }
-//        if (distAfter > SHIELD_ARCHON_MAX_DISTANCE) {
-//            // Do not move out of SHIELD_ARCHON_MAX_DISTANCE
-//            answer -= 100;
-//        }
-//        if (distAfter > currDist) {
-//            // Within the min and max distances, prioritize moving away from the archon so
-//            // other soldiers can come in
-//            answer += 10;
-//        }
-
-        return answer;
-    }
-
-    /**
      * Causes the soldier at rc to defend the nearest archon tightly
      * @param rc
      * @return
@@ -840,35 +812,6 @@ public strictfp class RobotPlayer {
         }
 
         return true;
-
-        // If we are close to an archon that is in trouble, we must stay and defend
-//        PriorityQueue<Direction> movePriority = new PriorityQueue<> (new Comparator<Direction>() {
-//            public int compare(Direction d1, Direction d2) {
-//                int d1Dist = nearestArchon.distanceSquaredTo(rc.adjacentLocation(d1));
-//                int d1Score = shieldingSoldierPriorities(d1Dist, nearestArchonDist);
-//                int d2Dist = nearestArchon.distanceSquaredTo(rc.adjacentLocation(d2));
-//                int d2Score = shieldingSoldierPriorities(d2Dist, nearestArchonDist);
-//
-//                if (d1Score < d2Score) {
-//                    return -1;
-//                } else {
-//                    return 1;
-//                }
-//            }
-//        });
-
-//        for (Direction dir : directions) {
-//            movePriority.add(dir);
-//        }
-
-//        while (rc.isActionReady() && !movePriority.isEmpty()) {
-//            Direction currMove = movePriority.poll();
-//            if (rc.canMove(currMove)) {
-//                // Only move one move to save actions for defense
-//                rc.move(currMove);
-//                break;
-//            }
-//        }
     }
 
     /**
