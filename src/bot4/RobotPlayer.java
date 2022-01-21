@@ -43,10 +43,13 @@ public strictfp class RobotPlayer {
 
     // Miner constants
     static final int MINIMUM_LEAD = 1;
+    static final int MINER_CLUMPED_NUM = 1;
 
     // Soldier constants
-    static final int IDEAL_SOLDIER_MINER_DISTANCE_SQUARED = 8;
+    static final int SOLDIER_MINER_MIN_DIST = 3;
+    static final int SOLDIER_MINER_MAX_DIST = 8;
     static final int SHIELD_ARCHON_MAX_DISTANCE = 18;
+    static final int SOLDIER_CLUMPED_NUM = 4;
 
     /**
      * A random number generator.
@@ -508,44 +511,6 @@ public strictfp class RobotPlayer {
     }
 
     /**
-     * If rc can see more than two friends of the same type, returns the direction away from the
-     * center of these friends. Else, returns null.
-     * @param rc
-     * @return
-     * @throws GameActionException
-     */
-    static Direction checkClumped(RobotController rc) throws GameActionException {
-        MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
-        int clumpAllowedDistance = (center.x / 2) * (center.x / 2);
-        if (rc.getLocation().distanceSquaredTo(center) > clumpAllowedDistance) {
-            // If we are far from the center, no need to prevent clumping
-            return null;
-        }
-
-        RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
-        List<RobotInfo> sameTypeFriends = new ArrayList<>();
-        for (RobotInfo friend : friendsVisible) {
-            if (friend.getType() == rc.getType()) {
-                sameTypeFriends.add(friend);
-            }
-        }
-        int numSameType = sameTypeFriends.size();
-        if (numSameType > 2) {
-            int centerX = 0;
-            int centerY = 0;
-            for (RobotInfo friend : sameTypeFriends) {
-                MapLocation friendLoc = friend.getLocation();
-                centerX += friendLoc.x;
-                centerY += friendLoc.y;
-            }
-            MapLocation friendsCenter = new MapLocation(centerX / numSameType, centerY / numSameType);
-            return friendsCenter.directionTo(rc.getLocation());
-        }
-
-        return null;
-    }
-
-    /**
      * Returns true if this is our team's furthest archon from the center, false otherwise.
      * Breaks ties by which archon has the lowest id (is earliest in the comms array and will
      * produce troops first so will make gold fastest).
@@ -626,6 +591,44 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * If rc can see more than two friends of the same type, returns the direction away from the
+     * center of these friends. Else, returns null.
+     * @param rc
+     * @return
+     * @throws GameActionException
+     */
+    static Direction checkClumped(RobotController rc) throws GameActionException {
+        MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
+        int clumpAllowedDistance = (center.x / 2) * (center.x / 2);
+        if (rc.getLocation().distanceSquaredTo(center) > clumpAllowedDistance) {
+            // If we are far from the center, no need to prevent clumping
+            return null;
+        }
+
+        RobotInfo[] friendsVisible = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
+        List<RobotInfo> sameTypeFriends = new ArrayList<>();
+        for (RobotInfo friend : friendsVisible) {
+            if (friend.getType() == rc.getType()) {
+                sameTypeFriends.add(friend);
+            }
+        }
+        int numSameType = sameTypeFriends.size();
+        if ((rc.getType() == RobotType.SOLDIER && numSameType >= SOLDIER_CLUMPED_NUM) || (rc.getType() == RobotType.MINER && numSameType > MINER_CLUMPED_NUM)) {
+            int centerX = 0;
+            int centerY = 0;
+            for (RobotInfo friend : sameTypeFriends) {
+                MapLocation friendLoc = friend.getLocation();
+                centerX += friendLoc.x;
+                centerY += friendLoc.y;
+            }
+            MapLocation friendsCenter = new MapLocation(centerX / numSameType, centerY / numSameType);
+            return friendsCenter.directionTo(rc.getLocation());
+        }
+
+        return null;
+    }
+
+    /**
      * Returns a good default direction for a miner or soldier. The default direction is
      * calculated as going away from the nearest archon, unless this goes away from the center,
      * then the default direction is towards the center.
@@ -634,7 +637,7 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static Direction getDefaultDirection(RobotController rc) throws GameActionException {
-        // Do not be too clumped
+        // If we are too clumped, go away from the clump
         Direction dir = checkClumped(rc);
         if (dir != null) {
             return dir;
@@ -645,11 +648,12 @@ public strictfp class RobotPlayer {
         Direction awayFromNearestArchon = getNearestArchon(rc).directionTo(myLoc);
         MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
 
-        // Return the direction to center if the direction away from the nearest archon goes towards the edge
         Direction toCenter = myLoc.directionTo(center);
         if (awayFromNearestArchon.dx * toCenter.dx >= 0 && awayFromNearestArchon.dy * toCenter.dy >= 0) {
+            // Return the direction away from the nearest archon as long as it doesn't go away from the center
             return awayFromNearestArchon;
         } else {
+            // Return direction to the center if the direction away from the nearest archon goes towards the outside
             return toCenter;
         }
     }
@@ -667,6 +671,11 @@ public strictfp class RobotPlayer {
             while (rc.canMineGold(loc)) {
                 rc.mineGold(loc);
             }
+
+            if (rc.senseGold(loc) > 0) {
+                // If we didn't finish mining the gold, stay here
+                return;
+            }
         }
 
         // Mine any lead we can reach as long as we don't deplete it
@@ -674,32 +683,50 @@ public strictfp class RobotPlayer {
             while (rc.canMineLead(loc) && rc.senseLead(loc) > MINIMUM_LEAD) {
                 rc.mineLead(loc);
             }
+
+            if (rc.senseLead(loc) > MINIMUM_LEAD) {
+                // If we didn't finish mining the lead, stay here
+                return;
+            }
         }
 
         // Go towards any gold we see
-        for (MapLocation loc : rc.senseNearbyLocationsWithGold(actionRadius)) {
-            Direction goldDir = rc.getLocation().directionTo(loc);
-            while (rc.canMove(goldDir)) {
-                rc.move(goldDir);
+        MapLocation[] goldList = rc.senseNearbyLocationsWithGold(actionRadius);
+        if (goldList.length > 0) {
+            Direction goldDir = rc.getLocation().directionTo(goldList[0]);
+            while (rc.isActionReady() && rc.getLocation().distanceSquaredTo(goldList[0]) > rc.getType().actionRadiusSquared) {
+                if (rc.canMove(goldDir)) {
+                    rc.move(goldDir);
+                } else if (rc.canMove(goldDir.rotateRight())) {
+                    rc.move(goldDir.rotateRight());
+                } else if (rc.canMove(goldDir.rotateLeft())) {
+                    rc.move(goldDir.rotateLeft());
+                } else {
+                    break;
+                }
+                goldDir = rc.getLocation().directionTo(goldList[0]);
             }
             return;
         }
 
-        // Get the direction towards the most lead we see
-        MapLocation maxLeadLoc = rc.getLocation();
+        // Go towards any lead we can go to
         for (MapLocation loc : rc.senseNearbyLocationsWithLead(visionRadius)) {
-            if (rc.senseLead(loc) > MINIMUM_LEAD && rc.senseLead(loc) > rc.senseLead(maxLeadLoc)) {
-                maxLeadLoc = loc;
+            Direction toLead = rc.getLocation().directionTo(loc);
+            if (rc.senseLead(loc) > MINIMUM_LEAD && rc.canMove(toLead)) {
+                while (rc.isActionReady() && rc.getLocation().distanceSquaredTo(loc) > rc.getType().actionRadiusSquared) {
+                    if (rc.canMove(toLead)) {
+                        rc.move(toLead);
+                    } else if (rc.canMove(toLead.rotateRight())) {
+                        rc.move(toLead.rotateRight());
+                    } else if (rc.canMove(toLead.rotateLeft())) {
+                        rc.move(toLead.rotateLeft());
+                    } else {
+                        break;
+                    }
+                    toLead = rc.getLocation().directionTo(loc);
+                }
+                return;
             }
-        }
-
-        // Go towards the most lead
-        Direction leadDir = rc.getLocation().directionTo(maxLeadLoc);
-        if (rc.canMove(leadDir)) {
-            while (rc.canMove(leadDir)) {
-                rc.move(leadDir);
-            }
-            return;
         }
 
         // If we see no gold or lead, follow the default move
@@ -729,7 +756,7 @@ public strictfp class RobotPlayer {
     static PriorityQueue<RobotInfo> getAttackPriority(RobotController rc) {
         PriorityQueue<RobotInfo> attackPriority = new PriorityQueue<> (new Comparator<RobotInfo>() {
             public int compare(RobotInfo r1, RobotInfo r2) {
-                // Prioritize above all finishing off an enemy
+                // Prioritize above all finishing off any enemy
                 if (r1.getHealth() < 3) {
                     return -1;
                 } else if (r2.getHealth() < 3) {
@@ -865,13 +892,13 @@ public strictfp class RobotPlayer {
                 MapLocation myLoc = rc.getLocation();
                 MapLocation minerLoc = friend.getLocation();
                 Direction dir = myLoc.directionTo(minerLoc);
-                if (myLoc.distanceSquaredTo(minerLoc) > IDEAL_SOLDIER_MINER_DISTANCE_SQUARED) {
+                if (myLoc.distanceSquaredTo(minerLoc) > SOLDIER_MINER_MAX_DIST) {
                     // Move towards our miner if we are too far
                     if (rc.canMove(dir)) {
                         rc.move(dir);
                         return;
                     }
-                } else if (myLoc.distanceSquaredTo(minerLoc) < IDEAL_SOLDIER_MINER_DISTANCE_SQUARED) {
+                } else if (myLoc.distanceSquaredTo(minerLoc) < SOLDIER_MINER_MIN_DIST) {
                     // Move away from our miner if we are too close
                     if (rc.canMove(dir.opposite())) {
                         rc.move(dir.opposite());
