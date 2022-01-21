@@ -1,6 +1,6 @@
 # Battlecode 2022 Kyle, Daniel, Julian and Andrei
 
-All files except for those in the folders bot1 and coordinatedBoi in src were part of the scaffold for the competition. bot1 and coodinatedBoi are different editions of our code, and each have a RobotPlayer.java file to run our bots.
+All files except for those in the folders bot1, coordinatedBoi, and bot3 in src were part of the scaffold for the competition. bot1, coodinatedBoi, and bot3 are iterations of our code, and each have a RobotPlayer.java file to run our bots.
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 
