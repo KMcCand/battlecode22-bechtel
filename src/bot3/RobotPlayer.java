@@ -7,7 +7,6 @@ import java.util.Comparator;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
-import java.lang.Math;
 
 /**
  * RobotPlayer is the class that describes your main robot strategy.
@@ -30,8 +29,8 @@ public strictfp class RobotPlayer {
     static int surroundingSoldiers = 2;
     static boolean builtLab = false;
     static int startingMIners2 = 10;
-    static final int NUM_SOLDIERS_FOR_VIOLENT_ENEMY = 3;
-    static final int NUM_SOLDIERS_FOR_PEACEFUL_ENEMY = 1;
+    static final int NUM_SOLDIERS_FOR_VIOLENT_ENEMY = 5;
+    static final int NUM_SOLDIERS_FOR_PEACEFUL_ENEMY = 3;
 
     // Comms Array Indices
     static final int ARCHON_LOCATION_START_INDEX = 0;
@@ -47,8 +46,7 @@ public strictfp class RobotPlayer {
 
     // Soldier constants
     static final int IDEAL_SOLDIER_MINER_DISTANCE_SQUARED = 8;
-    static final int SHIELD_ARCHON_MIN_DISTANCE = 2;
-    static final int SHIELD_ARCHON_MAX_DISTANCE = 12;
+    static final int SHIELD_ARCHON_MAX_DISTANCE = 18;
 
     /**
      * A random number generator.
@@ -322,11 +320,16 @@ public strictfp class RobotPlayer {
             rc.buildRobot(RobotType.SOLDIER, toLoc);
         }
 
-        if (numSoldiers == 2) {
-            if (rc.canBuildRobot(RobotType.SOLDIER, toLoc.rotateLeft())) {
-                rc.buildRobot(RobotType.SOLDIER, toLoc.rotateLeft());
-            } else if (rc.canBuildRobot(RobotType.SOLDIER, toLoc.rotateRight())) {
-                rc.buildRobot(RobotType.SOLDIER, toLoc.rotateRight());
+        Direction toLocRight = rc.getLocation().directionTo(loc);
+        for (int i = 0; i < (numSoldiers - 1) / 2; i++) {
+            toLoc = toLoc.rotateLeft();
+            if (rc.canBuildRobot(RobotType.SOLDIER, toLoc)) {
+                rc.buildRobot(RobotType.SOLDIER, toLoc);
+            }
+
+            toLocRight = toLocRight.rotateRight();
+            if (rc.canBuildRobot(RobotType.SOLDIER, toLocRight)) {
+                rc.buildRobot(RobotType.SOLDIER, toLocRight);
             }
         }
     }
@@ -338,22 +341,42 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static boolean defendIfEnemies(RobotController rc) throws GameActionException {
+        MapLocation myLoc = rc.getLocation();
         RobotInfo[] enemies = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam().opponent());
+        List<Direction> underAttackFrom = new ArrayList<>();
         boolean sawEnemy = false;
         for (RobotInfo enemy : enemies) {
             RobotType type = enemy.getType();
             if (type == RobotType.SOLDIER || type == RobotType.ARCHON || type == RobotType.SAGE || type == RobotType.WATCHTOWER) {
                 sawEnemy = true;
                 makeSoldiersTowardsLocation(rc, enemy.getLocation(), NUM_SOLDIERS_FOR_VIOLENT_ENEMY);
+                underAttackFrom.add(myLoc.directionTo(enemy.getLocation()));
             } else if (type == RobotType.MINER || type == RobotType.BUILDER || type == RobotType.LABORATORY) {
                 sawEnemy = true;
                 makeSoldiersTowardsLocation(rc, enemy.getLocation(), NUM_SOLDIERS_FOR_PEACEFUL_ENEMY);
+                underAttackFrom.add(myLoc.directionTo(enemy.getLocation()));
             }
         }
 
         if (sawEnemy) {
-            // Set the communications array to say our archon is in danger
-            writeIntToIndex(rc, getNearestArchonIndex(rc), OUR_ARCHON_IS_SAFE + 1);
+            // Set the communications array to say our archon is in danger from a certain direction
+            int archonStatus;
+            if (underAttackFrom.size() > 1) {
+                // Under attack from multiple directions
+                archonStatus = 5;
+            } else {
+                Direction dir = underAttackFrom.get(0);
+                if (dir.equals(Direction.NORTH) || dir.equals(Direction.NORTHEAST)) {
+                    archonStatus = 1;
+                } else if (dir.equals(Direction.EAST) || dir.equals(Direction.SOUTHEAST)) {
+                    archonStatus = 2;
+                } else if (dir.equals(Direction.SOUTH) || dir.equals(Direction.SOUTHWEST)) {
+                    archonStatus = 3;
+                } else {
+                    archonStatus = 4;
+                }
+            }
+            writeIntToIndex(rc, getNearestArchonIndex(rc), archonStatus);
 
             // Make a miner to pick up the lead after we kill the enemy
             RobotInfo[] friends = rc.senseNearbyRobots(rc.getType().visionRadiusSquared, rc.getTeam());
@@ -405,7 +428,7 @@ public strictfp class RobotPlayer {
         List<Direction> allValidDir = getArchonBuildDir(rc);
         Direction dir = allValidDir.get(rng.nextInt(allValidDir.size()));
 
-        if (!builtBuilder && currMiners == startingMiners) {
+        if (!builtBuilder && currMiners == startingMiners && isFurthestArchonFromCenter(rc)) {
             boolean buildBuilder = rc.canBuildRobot(RobotType.BUILDER, dir);
             if (buildBuilder) {
                 rc.buildRobot(RobotType.BUILDER, dir);
@@ -729,24 +752,93 @@ public strictfp class RobotPlayer {
 
         return attackPriority;
     }
-    
+
+    /**
+     * An attempt at making soldiers shield against a specific direction. Cause them to have
+     * too many moves, not enough attacks. Deprecated.
+     * Returns the 'score' for a given move for a soldier shielding an archon under attack.
+     * @param distAfter the distance to the archon after the move
+     * @param currDist the distance to the archon before the move
+     * @return
+     */
+    static int shieldingSoldierPriorities(int distAfter, int currDist) {
+        int answer = 0;
+//        if (currDist < SHIELD_ARCHON_MIN_DISTANCE && distAfter > currDist) {
+//            // First priority is move away from archon so we can produce guys
+//            answer += 105;
+//        }
+//        if (distAfter > SHIELD_ARCHON_MAX_DISTANCE) {
+//            // Do not move out of SHIELD_ARCHON_MAX_DISTANCE
+//            answer -= 100;
+//        }
+//        if (distAfter > currDist) {
+//            // Within the min and max distances, prioritize moving away from the archon so
+//            // other soldiers can come in
+//            answer += 10;
+//        }
+
+        return answer;
+    }
+
+    /**
+     * Causes the soldier at rc to defend the nearest archon tightly
+     * @param rc
+     * @return
+     * @throws GameActionException
+     */
     static boolean shieldArchon(RobotController rc) throws GameActionException {
         int nearestArchonIndex = getNearestArchonIndex(rc);
         MapLocation nearestArchon = getLocationFromIndex(rc, nearestArchonIndex);
-        int nearestArchonDistance = rc.getLocation().distanceSquaredTo(nearestArchon);
-        if (nearestArchonDistance <= SHIELD_ARCHON_MAX_DISTANCE && getIntFromIndex(rc, nearestArchonIndex) != OUR_ARCHON_IS_SAFE) {
-            for (Direction dir : directions) {
-                int idealDistance = (SHIELD_ARCHON_MIN_DISTANCE + SHIELD_ARCHON_MAX_DISTANCE) / 2;
-                int currentError = Math.abs(idealDistance - nearestArchonDistance);
-                int possibleError = Math.abs(idealDistance - rc.adjacentLocation(dir).distanceSquaredTo(nearestArchon));
-                if (possibleError < currentError && rc.canMove(dir)) {
-                    rc.move(dir);
-                    break;
-                }
-            }
-            return true;
+        int nearestArchonDist = rc.getLocation().distanceSquaredTo(nearestArchon);
+        int threatDirection = getIntFromIndex(rc, nearestArchonIndex);
+
+        if (nearestArchonDist > SHIELD_ARCHON_MAX_DISTANCE || threatDirection == OUR_ARCHON_IS_SAFE) {
+            // Too far away to defend or nearest archon is not under attack
+            return false;
         }
-        return false;
+
+        if (nearestArchonDist < SHIELD_ARCHON_MAX_DISTANCE - 5) {
+            // Get pretty far from archon to make space for other soldiers
+            Direction awayFromArchon = nearestArchon.directionTo(rc.getLocation());
+            if (rc.canMove(awayFromArchon)) {
+                rc.move(awayFromArchon);
+            } else if (rc.canMove(awayFromArchon.rotateLeft())) {
+                rc.move(awayFromArchon.rotateLeft());
+            } else if (rc.canMove(awayFromArchon.rotateRight())) {
+                rc.move(awayFromArchon.rotateRight());
+            }
+        }
+
+        return true;
+
+        // If we are close to an archon that is in trouble, we must stay and defend
+//        PriorityQueue<Direction> movePriority = new PriorityQueue<> (new Comparator<Direction>() {
+//            public int compare(Direction d1, Direction d2) {
+//                int d1Dist = nearestArchon.distanceSquaredTo(rc.adjacentLocation(d1));
+//                int d1Score = shieldingSoldierPriorities(d1Dist, nearestArchonDist);
+//                int d2Dist = nearestArchon.distanceSquaredTo(rc.adjacentLocation(d2));
+//                int d2Score = shieldingSoldierPriorities(d2Dist, nearestArchonDist);
+//
+//                if (d1Score < d2Score) {
+//                    return -1;
+//                } else {
+//                    return 1;
+//                }
+//            }
+//        });
+
+//        for (Direction dir : directions) {
+//            movePriority.add(dir);
+//        }
+
+//        while (rc.isActionReady() && !movePriority.isEmpty()) {
+//            Direction currMove = movePriority.poll();
+//            if (rc.canMove(currMove)) {
+//                // Only move one move to save actions for defense
+//                rc.move(currMove);
+//                break;
+//            }
+//        }
     }
 
     /**
