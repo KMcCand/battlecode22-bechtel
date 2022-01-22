@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.Random;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Collections;
 
 /**
  * RobotPlayer is the class that describes your main robot strategy.
@@ -44,6 +45,7 @@ public strictfp class RobotPlayer {
     // Miner constants
     static final int MINIMUM_LEAD = 1;
     static final int MINER_CLUMPED_NUM = 1;
+    static final int TOO_MUCH_RUBBLE = 17;
 
     // Soldier constants
     static final int SOLDIER_MINER_MIN_DIST = 3;
@@ -629,6 +631,35 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Returns the direction going towards centerDir that would put rc on the least rubble.
+     * @param rc
+     * @param centerDir
+     * @return
+     * @throws GameActionException
+     */
+    static Direction getBestRubbleDir(RobotController rc, Direction centerDir) throws GameActionException {
+        List<Direction> rubbleChoices = new ArrayList<>();
+        rubbleChoices.add(centerDir);
+        rubbleChoices.add(centerDir.rotateLeft());
+        rubbleChoices.add(centerDir.rotateLeft().rotateLeft());
+        rubbleChoices.add(centerDir.rotateRight());
+        rubbleChoices.add(centerDir.rotateRight().rotateRight());
+        Collections.shuffle(rubbleChoices);
+
+        Direction best = rubbleChoices.get(0);
+        int minRubble = 100;
+        for (Direction rubbleChoice : rubbleChoices) {
+            MapLocation possibleMove = rc.adjacentLocation(rubbleChoice);
+            if (rc.canSenseLocation(possibleMove) && rc.senseRubble(possibleMove) < minRubble) {
+                best = rubbleChoice;
+                minRubble = rc.senseRubble(possibleMove);
+            }
+        }
+
+        return best;
+    }
+
+    /**
      * Returns a good default direction for a miner or soldier. The default direction is
      * calculated as going away from the nearest archon, unless this goes away from the center,
      * then the default direction is towards the center.
@@ -647,15 +678,20 @@ public strictfp class RobotPlayer {
         MapLocation myLoc = rc.getLocation();
         Direction awayFromNearestArchon = getNearestArchon(rc).directionTo(myLoc);
         MapLocation center = new MapLocation(rc.getMapWidth() / 2, rc.getMapHeight() / 2);
+        Direction centerDir = null;
 
         Direction toCenter = myLoc.directionTo(center);
         if (awayFromNearestArchon.dx * toCenter.dx >= 0 && awayFromNearestArchon.dy * toCenter.dy >= 0) {
-            // Return the direction away from the nearest archon as long as it doesn't go away from the center
-            return awayFromNearestArchon;
+            // Go away from the nearest archon as long as it doesn't go away from the center
+            centerDir = awayFromNearestArchon;
         } else {
-            // Return direction to the center if the direction away from the nearest archon goes towards the outside
-            return toCenter;
+            // Go to the center if the direction away from the nearest archon goes towards the outside
+            centerDir = toCenter;
         }
+
+        // Go towards any direction roughly towards centerDir that has small rubble
+        // return getBestRubbleDir(rc, centerDir);
+        return centerDir;
     }
 
     /**
