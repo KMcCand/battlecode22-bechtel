@@ -429,14 +429,15 @@ public strictfp class RobotPlayer {
     }
 
     /**
-     * Causes rc to repair all friendly units within range.
+     * Causes the archon rc to repair all friendly units within range.
      * @param rc
      * @throws GameActionException
      */
     static void repairNearby(RobotController rc) throws GameActionException {
-        for (Direction dir : directions) {
-            if (rc.canRepair(rc.adjacentLocation(dir))) {
-                rc.repair(rc.adjacentLocation(dir));
+        RobotInfo[] friends = rc.senseNearbyRobots(rc.getType().actionRadiusSquared, rc.getTeam());
+        for (RobotInfo friend : friends) {
+            if (rc.canRepair(friend.getLocation()) && friend.getHealth() != friend.getType().health) {
+                rc.repair(friend.getLocation());
             }
         }
     }
